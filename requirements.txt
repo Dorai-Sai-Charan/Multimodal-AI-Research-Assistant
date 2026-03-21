@@ -1,0 +1,34 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# LLM
+google-genai>=1.68.0
+
+# Embeddings
+sentence-transformers==3.3.1
+
+# Vector Store
+chromadb==0.6.3
+
+# PDF Processing
+PyMuPDF==1.25.3
+pdfplumber==0.11.4
+
+# Chunking
+langchain-text-splitters==0.3.4
+
+# UI
+streamlit==1.41.1
+
+# Utilities
+python-dotenv==1.0.1
+uuid6==2024.7.10
+
+# Multimodal Support
+easyocr==1.7.2
+opencv-python-headless==4.13.0.92
+Pillow==11.1.0
