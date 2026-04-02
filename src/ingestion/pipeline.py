@@ -85,27 +85,21 @@ class IngestionPipeline:
             processed_elements = []
             processed_elements.extend(text_elements)
             processed_elements.extend(table_elements)
-            
+
+            # Add images with lightweight placeholder descriptions.
+            # Vision analysis (Gemini) is deferred to query time to keep
+            # ingestion fast and avoid burning API quota during upload.
             for img_elem in image_elements:
-                # For each image, perform Vision analysis and OCR
-                # We categorize based on Gemini's initial classification
-                logger.info(f"Analyzing image found on page {img_elem.page_number}...")
-                
-                # Vision analysis provides a technical description
-                vision_description = self.vision_analyzer.analyze(img_elem.image_path)
-                
-                # Heuristically check if this is likely an equation
-                is_equation = "equation" in vision_description.lower() or "formula" in vision_description.lower()
-                
-                if is_equation:
-                    eq_data = self.equation_extractor.extract_from_image(img_elem.image_path)
-                    img_elem.element_type = "equation"
-                    img_elem.content = eq_data['latex']
-                    img_elem.table_data = {"explanation": eq_data['explanation']} # temp storage
-                else:
-                    # Otherwise treat as figure and use vision description
-                    img_elem.content = vision_description
-                
+                logger.info(
+                    f"Adding image from page {img_elem.page_number} "
+                    f"(vision analysis deferred to query time)"
+                )
+                img_elem.content = (
+                    f"[Figure on page {img_elem.page_number}] "
+                    f"Image extracted from the document. "
+                    f"Path: {img_elem.image_path}"
+                )
+                img_elem.element_type = "figure"
                 processed_elements.append(img_elem)
 
             if not processed_elements:

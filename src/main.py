@@ -43,5 +43,5 @@ if __name__ == "__main__":
         "src.main:app",
         host=settings.app_host,
         port=settings.app_port,
-        reload=True,
+        reload=False,
     )

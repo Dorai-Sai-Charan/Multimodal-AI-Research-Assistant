@@ -1,13 +1,13 @@
 """
 Vision analysis for graphs, diagrams, and figures using Gemini Vision.
-Provides natural language descriptions of visual content.
+Uses the shared rate limiter and retry logic from llm_client.
 """
 
 import logging
 import PIL.Image
 from google import genai
-from google.genai import types
 from src.config import settings
+from src.generation.llm_client import gemini_call_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -18,21 +18,10 @@ class VisionAnalyzer:
     def __init__(self):
         if not settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is not set.")
-        
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model_name = "gemini-2.5-flash"
 
     def analyze(self, image_path: str, prompt: str = None) -> str:
-        """
-        Analyze an image and return a text description.
-
-        Args:
-            image_path: Path to the image file.
-            prompt: Optional prompt to guide the analysis.
-
-        Returns:
-            Natural language description of the image content.
-        """
+        """Analyze an image and return a text description (with retry)."""
         if prompt is None:
             prompt = (
                 "Describe this image from a research paper in detail. "
@@ -43,22 +32,13 @@ class VisionAnalyzer:
             )
 
         try:
-            logger.info(f"Analyzing image with Gemini Vision: {image_path}")
+            logger.info(f"Analyzing image: {image_path}")
             img = PIL.Image.open(image_path)
-            
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=[prompt, img],
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=1024,
-                ),
+            description = gemini_call_with_retry(
+                self.client, [prompt, img], temperature=0.2, max_tokens=1024
             )
-            
-            description = response.text.strip()
             logger.info(f"Successfully analyzed image: {image_path}")
             return description
-
         except Exception as e:
             logger.error(f"Error analyzing image {image_path}: {e}")
-            return "Visual content description unavailable due to an error."
+            return "Visual content description unavailable."

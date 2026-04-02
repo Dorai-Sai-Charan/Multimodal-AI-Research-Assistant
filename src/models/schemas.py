@@ -108,3 +108,27 @@ class GenerationResponse:
     query: str = ""
     intent: str = "question_answering"
     chunks_used: int = 0
+
+
+@dataclass
+class AgentStep:
+    """A single reasoning step in the ReAct agent loop."""
+
+    step_number: int
+    thought: str
+    action: str
+    action_input: dict
+    observation: str = ""
+
+
+@dataclass
+class AgentResponse:
+    """Response from the agentic reasoning system, including full reasoning trace."""
+
+    answer: str
+    reasoning_steps: list = field(default_factory=list)  # list[AgentStep]
+    citations: list[dict] = field(default_factory=list)
+    query: str = ""
+    intent: str = "question_answering"
+    chunks_used: int = 0
+    total_steps: int = 0
