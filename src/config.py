@@ -17,8 +17,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 class Settings(BaseSettings):
     """Application settings loaded from .env file."""
 
-    # Gemini
+    # Gemini (used for vision tasks only)
     gemini_api_key: str = ""
+
+    # Groq (used for text generation)
+    groq_api_key: str = ""
 
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"

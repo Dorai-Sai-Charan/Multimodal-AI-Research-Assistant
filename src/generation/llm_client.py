@@ -1,11 +1,12 @@
 """
-LLM client for Google Gemini using the new google-genai SDK.
+LLM client using Groq for text generation and Google Gemini for vision tasks.
 Includes a global rate limiter and automatic retry on 429 errors.
 """
 
 import time
 import threading
 import logging
+from groq import Groq
 from google import genai
 from google.genai import types
 from src.config import settings
@@ -15,19 +16,21 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 15  # seconds
 
-# Model used across the application
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+# Groq model for text generation
+GROQ_MODEL = "llama-3.3-70b-versatile"
+
+# Gemini model for vision tasks (VisionAnalyzer, EquationExtractor)
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
-class _RateLimiter:
+class _GeminiRateLimiter:
     """
-    Global rate limiter shared by ALL Gemini calls.
-    gemini-2.5-flash-lite free tier: higher limits than flash.
+    Rate limiter for Gemini Vision calls only (used during ingestion).
     """
 
     _lock = threading.Lock()
     _last_call: float = 0.0
-    MIN_INTERVAL = 4.0  # seconds between API calls
+    MIN_INTERVAL = 4.0
 
     @classmethod
     def wait(cls):
@@ -36,7 +39,7 @@ class _RateLimiter:
             elapsed = now - cls._last_call
             if elapsed < cls.MIN_INTERVAL:
                 gap = cls.MIN_INTERVAL - elapsed
-                logger.debug(f"Rate limiter: sleeping {gap:.1f}s")
+                logger.debug(f"Gemini rate limiter: sleeping {gap:.1f}s")
                 time.sleep(gap)
             cls._last_call = time.time()
 
@@ -44,10 +47,10 @@ class _RateLimiter:
 def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
     """
     Shared Gemini API caller with rate limiting and retry.
-    Used by LLMClient, VisionAnalyzer, and EquationExtractor.
+    Used by VisionAnalyzer and EquationExtractor for image-based tasks.
     """
     for attempt in range(1, MAX_RETRIES + 1):
-        _RateLimiter.wait()
+        _GeminiRateLimiter.wait()
         try:
             response = client.models.generate_content(
                 model=GEMINI_MODEL,
@@ -63,7 +66,7 @@ def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                 wait = RETRY_BASE_DELAY * attempt
                 logger.warning(
-                    f"Rate limited (attempt {attempt}/{MAX_RETRIES}). "
+                    f"Gemini rate limited (attempt {attempt}/{MAX_RETRIES}). "
                     f"Waiting {wait}s…"
                 )
                 time.sleep(wait)
@@ -73,28 +76,46 @@ def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
 
 
 class LLMClient:
-    """Google Gemini LLM client with built-in rate limiting and retry."""
+    """Groq LLM client for text generation with automatic retry."""
 
     def __init__(self):
-        if not settings.gemini_api_key:
+        if not settings.groq_api_key:
             raise ValueError(
-                "GEMINI_API_KEY is not set. "
-                "Get one from https://aistudio.google.com/apikey "
+                "GROQ_API_KEY is not set. "
+                "Get one from https://console.groq.com/keys "
                 "and add it to your .env file."
             )
-        self.client = genai.Client(api_key=settings.gemini_api_key)
-        logger.info(f"Gemini LLM client initialized (model: {GEMINI_MODEL})")
+        self.client = Groq(api_key=settings.groq_api_key)
+        logger.info(f"Groq LLM client initialized (model: {GROQ_MODEL})")
 
     def generate(
         self,
         prompt: str,
-        temperature: float = 0.3,
+        temperature: float = 0.2,
         max_tokens: int = 2048,
     ) -> str:
-        """Generate a response with rate limiting and automatic retry."""
-        return gemini_call_with_retry(
-            self.client, prompt, temperature=temperature, max_tokens=max_tokens
-        )
+        """Generate a response using Groq with automatic retry on rate limits."""
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "rate" in error_str.lower():
+                    wait = RETRY_BASE_DELAY * attempt
+                    logger.warning(
+                        f"Groq rate limited (attempt {attempt}/{MAX_RETRIES}). "
+                        f"Waiting {wait}s…"
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise RuntimeError("Groq API rate limit exceeded after all retries.")
 
     def generate_with_context(self, prompt_template: str, **kwargs) -> str:
         """Generate using a prompt template with variable substitution."""
