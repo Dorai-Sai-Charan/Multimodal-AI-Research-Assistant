@@ -9,7 +9,7 @@ import tempfile
 import logging
 import threading
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.ingestion.pipeline import IngestionPipeline
 from src.retrieval.rag_pipeline import RAGPipeline
@@ -52,47 +52,69 @@ def get_agent() -> ResearchAgent:
 # Request / Response Models
 # ---------------------------------------------------------------------------
 
-class QueryRequest(BaseModel):
+class LLMConfig(BaseModel):
+    """Per-request overrides for model and generation parameters."""
+    model: str | None = None
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=1, le=32768)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+    frequency_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    presence_penalty: float | None = Field(default=None, ge=-2.0, le=2.0)
+    seed: int | None = None
+    reasoning_effort: str | None = None  # "low" | "medium" | "high"
+
+
+class TunableRequest(BaseModel):
+    """Shared base for requests that allow LLM + retrieval overrides."""
+    llm_config: LLMConfig | None = None
+    similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class QueryRequest(TunableRequest):
     question: str
     top_k: int = 10
     filter_source: str | None = None
 
 
-class AgentQueryRequest(BaseModel):
+class AgentQueryRequest(TunableRequest):
     question: str
     chat_history: list[dict] = []
 
 
-class SummarizeRequest(BaseModel):
+class SummarizeRequest(TunableRequest):
     source_file: str | None = None
     top_k: int = 20
 
 
-class CompareRequest(BaseModel):
+class CompareRequest(TunableRequest):
     paper1: str
     paper2: str
 
 
-class LiteratureSurveyRequest(BaseModel):
+class LiteratureSurveyRequest(TunableRequest):
     topic: str = ""
     top_k: int = 30
 
 
-class ResearchGapsRequest(BaseModel):
+class ResearchGapsRequest(TunableRequest):
     source_file: str | None = None
 
 
-class ExplainRequest(BaseModel):
+class ExplainRequest(TunableRequest):
     concept: str
     source_file: str | None = None
 
 
-class RecommendRequest(BaseModel):
+class RecommendRequest(TunableRequest):
     interest: str
     top_k: int = 20
 
 
-class MultiDocRequest(BaseModel):
+class TrendsRequest(TunableRequest):
+    pass
+
+
+class MultiDocRequest(TunableRequest):
     question: str
     top_k: int = 20
 
@@ -128,6 +150,14 @@ class DocumentResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+def _llm_kwargs(req: TunableRequest) -> dict:
+    """Extract llm_config + similarity_threshold as kwargs for pipeline calls."""
+    return {
+        "llm_config": req.llm_config.model_dump(exclude_none=True) if req.llm_config else None,
+        "similarity_threshold": req.similarity_threshold,
+    }
+
 
 def _to_query_response(resp) -> QueryResponse:
     return QueryResponse(
@@ -249,6 +279,7 @@ async def query_documents(request: QueryRequest):
                 question=request.question,
                 top_k=request.top_k,
                 filter_source=request.filter_source,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -268,6 +299,10 @@ async def agent_query(request: AgentQueryRequest):
         resp = get_agent().run(
             question=request.question,
             chat_history=request.chat_history,
+            llm_config=(
+                request.llm_config.model_dump(exclude_none=True)
+                if request.llm_config else None
+            ),
         )
         return AgentQueryResponse(
             answer=resp.answer,
@@ -300,6 +335,7 @@ async def summarize_document(request: SummarizeRequest):
             get_rag_pipeline().summarize(
                 source_file=request.source_file,
                 top_k=request.top_k,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -314,7 +350,9 @@ async def compare_papers(request: CompareRequest):
         raise HTTPException(status_code=400, detail="Both paper1 and paper2 are required")
     try:
         return _to_query_response(
-            get_rag_pipeline().compare(request.paper1, request.paper2)
+            get_rag_pipeline().compare(
+                request.paper1, request.paper2, **_llm_kwargs(request)
+            )
         )
     except Exception as e:
         logger.error(f"Compare failed: {e}")
@@ -329,6 +367,7 @@ async def literature_survey(request: LiteratureSurveyRequest):
             get_rag_pipeline().literature_survey(
                 topic=request.topic,
                 top_k=request.top_k,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -341,7 +380,9 @@ async def research_gaps(request: ResearchGapsRequest):
     """Identify research gaps and future directions."""
     try:
         return _to_query_response(
-            get_rag_pipeline().identify_gaps(source_file=request.source_file)
+            get_rag_pipeline().identify_gaps(
+                source_file=request.source_file, **_llm_kwargs(request)
+            )
         )
     except Exception as e:
         logger.error(f"Research gaps failed: {e}")
@@ -358,6 +399,7 @@ async def explain_concept(request: ExplainRequest):
             get_rag_pipeline().explain(
                 concept=request.concept,
                 source_file=request.source_file,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -375,6 +417,7 @@ async def recommend_papers(request: RecommendRequest):
             get_rag_pipeline().recommend(
                 interest=request.interest,
                 top_k=request.top_k,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -383,10 +426,12 @@ async def recommend_papers(request: RecommendRequest):
 
 
 @router.post("/trends", response_model=QueryResponse)
-async def research_trends():
+async def research_trends(request: TrendsRequest = TrendsRequest()):
     """Analyse research trends across all uploaded papers."""
     try:
-        return _to_query_response(get_rag_pipeline().analyze_trends())
+        return _to_query_response(
+            get_rag_pipeline().analyze_trends(**_llm_kwargs(request))
+        )
     except Exception as e:
         logger.error(f"Trends failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -402,6 +447,7 @@ async def multi_doc_query(request: MultiDocRequest):
             get_rag_pipeline().multi_doc_query(
                 question=request.question,
                 top_k=request.top_k,
+                **_llm_kwargs(request),
             )
         )
     except Exception as e:
@@ -416,3 +462,80 @@ async def multi_doc_query(request: MultiDocRequest):
 @router.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "Multimodal AI Research Assistant"}
+
+
+# ---------------------------------------------------------------------------
+# Model catalogue — curated Groq text-generation models with usage guidance
+# ---------------------------------------------------------------------------
+
+AVAILABLE_MODELS = [
+    {
+        "id": "openai/gpt-oss-120b",
+        "label": "GPT-OSS 120B — Highest quality",
+        "family": "OpenAI",
+        "best_for": "Deep reasoning, literature surveys, complex multi-hop questions",
+        "supports_reasoning_effort": True,
+    },
+    {
+        "id": "openai/gpt-oss-20b",
+        "label": "GPT-OSS 20B — Fast & capable",
+        "family": "OpenAI",
+        "best_for": "Quick Q&A with good reasoning when latency matters",
+        "supports_reasoning_effort": True,
+    },
+    {
+        "id": "llama-3.3-70b-versatile",
+        "label": "Llama 3.3 70B — Balanced default",
+        "family": "Meta",
+        "best_for": "General research Q&A, summarization, everyday RAG",
+        "supports_reasoning_effort": False,
+    },
+    {
+        "id": "llama-3.1-8b-instant",
+        "label": "Llama 3.1 8B — Ultra-fast",
+        "family": "Meta",
+        "best_for": "Low-latency lookups, simple factual questions, drafts",
+        "supports_reasoning_effort": False,
+    },
+    {
+        "id": "qwen/qwen3-32b",
+        "label": "Qwen3 32B — Strong reasoning (multilingual)",
+        "family": "Qwen",
+        "best_for": "Technical reasoning, math-heavy papers, non-English content",
+        "supports_reasoning_effort": True,
+    },
+    {
+        "id": "groq/compound",
+        "label": "Groq Compound — Agentic / tool-use",
+        "family": "Groq",
+        "best_for": "Agent Mode multi-hop workflows and tool calling",
+        "supports_reasoning_effort": True,
+    },
+    {
+        "id": "groq/compound-mini",
+        "label": "Groq Compound Mini — Fast agent",
+        "family": "Groq",
+        "best_for": "Faster agent runs when quality tradeoff is acceptable",
+        "supports_reasoning_effort": True,
+    },
+]
+
+
+@router.get("/models")
+async def list_models():
+    """Return the curated list of selectable Groq text models with guidance."""
+    from src.config import settings
+    return {
+        "default": settings.llm_model,
+        "models": AVAILABLE_MODELS,
+        "defaults": {
+            "temperature": settings.llm_temperature,
+            "max_tokens": settings.llm_max_tokens,
+            "top_p": settings.llm_top_p,
+            "frequency_penalty": settings.llm_frequency_penalty,
+            "presence_penalty": settings.llm_presence_penalty,
+            "reasoning_effort": settings.llm_reasoning_effort,
+            "top_k": settings.top_k,
+            "similarity_threshold": settings.similarity_threshold,
+        },
+    }

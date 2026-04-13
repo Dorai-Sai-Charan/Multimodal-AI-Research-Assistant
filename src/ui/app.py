@@ -75,10 +75,66 @@ st.markdown("""
 # Session state initialisation
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Model catalogue — fetched once from the backend
+# ---------------------------------------------------------------------------
+
+FALLBACK_MODELS = {
+    "default": "llama-3.3-70b-versatile",
+    "models": [
+        {
+            "id": "llama-3.3-70b-versatile",
+            "label": "Llama 3.3 70B — Balanced default",
+            "family": "Meta",
+            "best_for": "General research Q&A, summarization, everyday RAG",
+            "supports_reasoning_effort": False,
+        }
+    ],
+    "defaults": {
+        "temperature": 0.2, "max_tokens": 2048, "top_p": 1.0,
+        "frequency_penalty": 0.0, "presence_penalty": 0.0,
+        "reasoning_effort": "medium", "top_k": 10, "similarity_threshold": 0.3,
+    },
+}
+
+
+@st.cache_data(ttl=300)
+def fetch_models() -> dict:
+    try:
+        r = requests.get(f"{API_URL}/models", timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return FALLBACK_MODELS
+
+
+MODEL_CATALOGUE = fetch_models()
+MODEL_DEFAULTS = MODEL_CATALOGUE["defaults"]
+MODEL_LIST = MODEL_CATALOGUE["models"]
+MODEL_BY_ID = {m["id"]: m for m in MODEL_LIST}
+
+
+def _default_settings() -> dict:
+    return {
+        "model": MODEL_CATALOGUE["default"],
+        "temperature": MODEL_DEFAULTS["temperature"],
+        "max_tokens": MODEL_DEFAULTS["max_tokens"],
+        "top_p": MODEL_DEFAULTS["top_p"],
+        "frequency_penalty": MODEL_DEFAULTS["frequency_penalty"],
+        "presence_penalty": MODEL_DEFAULTS["presence_penalty"],
+        "seed": None,
+        "reasoning_effort": MODEL_DEFAULTS["reasoning_effort"],
+        "top_k": MODEL_DEFAULTS["top_k"],
+        "similarity_threshold": MODEL_DEFAULTS["similarity_threshold"],
+    }
+
+
 for key, default in [
     ("messages", []),
     ("documents", []),
     ("agent_mode", False),
+    ("llm_settings", _default_settings()),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -129,8 +185,37 @@ def render_reasoning_steps(steps: list[dict]):
             )
 
 
+def _build_llm_config() -> dict:
+    """Extract model+generation params from session state for the request body."""
+    s = st.session_state.llm_settings
+    cfg = {
+        "model": s["model"],
+        "temperature": s["temperature"],
+        "max_tokens": s["max_tokens"],
+        "top_p": s["top_p"],
+        "frequency_penalty": s["frequency_penalty"],
+        "presence_penalty": s["presence_penalty"],
+    }
+    if s.get("seed") is not None:
+        cfg["seed"] = s["seed"]
+    model_info = MODEL_BY_ID.get(s["model"], {})
+    if model_info.get("supports_reasoning_effort") and s.get("reasoning_effort"):
+        cfg["reasoning_effort"] = s["reasoning_effort"]
+    return cfg
+
+
 def api_post(endpoint: str, payload: dict, timeout: int = 300):
-    """POST to the backend; returns (data_dict | None, error_str | None)."""
+    """POST to the backend; returns (data_dict | None, error_str | None).
+
+    Automatically injects the user's model settings (llm_config +
+    similarity_threshold) into every request body so feature endpoints
+    honour the sidebar settings panel.
+    """
+    payload = {
+        **payload,
+        "llm_config": _build_llm_config(),
+        "similarity_threshold": st.session_state.llm_settings["similarity_threshold"],
+    }
     try:
         r = requests.post(f"{API_URL}/{endpoint}", json=payload, timeout=timeout)
         if r.status_code == 200:
@@ -161,6 +246,109 @@ with st.sidebar:
         for b in ["RAG", "Agentic AI", "Multimodal", "Multi-hop", "Semantic Search"]
     )
     st.markdown(badges_html, unsafe_allow_html=True)
+
+    st.divider()
+
+    # -----------------------------------------------------------------
+    # ⚙️ Model Settings — model selection + generation parameters
+    # -----------------------------------------------------------------
+    with st.expander("⚙️ Model Settings", expanded=False):
+        s = st.session_state.llm_settings
+
+        # Presets --------------------------------------------------------
+        st.caption("**Quick presets** — one-click tuning for common use cases")
+        pc1, pc2, pc3 = st.columns(3)
+        if pc1.button("🎯 Precise", use_container_width=True, help="Low randomness — best for RAG, extraction, citations"):
+            s["temperature"] = 0.1
+            s["top_p"] = 1.0
+            st.rerun()
+        if pc2.button("⚖️ Balanced", use_container_width=True, help="Default Q&A — middle-ground creativity"):
+            s["temperature"] = 0.5
+            s["top_p"] = 1.0
+            st.rerun()
+        if pc3.button("🎨 Creative", use_container_width=True, help="Higher randomness — brainstorming, summaries"):
+            s["temperature"] = 0.9
+            s["top_p"] = 0.95
+            st.rerun()
+
+        st.divider()
+
+        # Model dropdown with guidance ----------------------------------
+        model_ids = [m["id"] for m in MODEL_LIST]
+        current_idx = model_ids.index(s["model"]) if s["model"] in model_ids else 0
+
+        def _fmt_model(mid: str) -> str:
+            return MODEL_BY_ID.get(mid, {}).get("label", mid)
+
+        s["model"] = st.selectbox(
+            "**Model**",
+            options=model_ids,
+            index=current_idx,
+            format_func=_fmt_model,
+            help="Which Groq model handles text generation for every feature.",
+        )
+        best_for = MODEL_BY_ID.get(s["model"], {}).get("best_for", "")
+        if best_for:
+            st.caption(f"💡 **Best for:** {best_for}")
+
+        st.divider()
+
+        # Core generation params ----------------------------------------
+        s["temperature"] = st.slider(
+            "Temperature", 0.0, 1.5, float(s["temperature"]), 0.05,
+            help="Higher = more creative and varied; lower = more deterministic and factual.",
+        )
+        s["max_tokens"] = st.slider(
+            "Max tokens", 256, 8192, int(s["max_tokens"]), 128,
+            help="Hard cap on the length of the model's response in tokens.",
+        )
+        s["top_k"] = st.slider(
+            "Retrieval top-k", 1, 30, int(s["top_k"]), 1,
+            help="How many document chunks to retrieve and feed to the model as context.",
+        )
+
+        # Advanced -------------------------------------------------------
+        show_advanced = st.toggle(
+            "🔧 Show advanced parameters", value=False, key="show_advanced_params"
+        )
+        if show_advanced:
+            s["top_p"] = st.slider(
+                "Top-p (nucleus)", 0.0, 1.0, float(s["top_p"]), 0.05,
+                help="Keeps the smallest set of tokens whose probabilities sum to p; 1.0 disables it.",
+            )
+            s["frequency_penalty"] = st.slider(
+                "Frequency penalty", -2.0, 2.0, float(s["frequency_penalty"]), 0.1,
+                help="Positive values reduce verbatim repetition of tokens already used.",
+            )
+            s["presence_penalty"] = st.slider(
+                "Presence penalty", -2.0, 2.0, float(s["presence_penalty"]), 0.1,
+                help="Positive values push the model toward introducing new topics.",
+            )
+            s["similarity_threshold"] = st.slider(
+                "Similarity threshold", 0.0, 1.0, float(s["similarity_threshold"]), 0.05,
+                help="Minimum relevance score a retrieved chunk must have to be used.",
+            )
+            seed_val = st.number_input(
+                "Seed (blank = random)",
+                value=int(s["seed"]) if s.get("seed") is not None else 0,
+                step=1,
+                help="Fixed seed makes outputs reproducible for the same prompt.",
+            )
+            s["seed"] = int(seed_val) if seed_val != 0 else None
+
+            if MODEL_BY_ID.get(s["model"], {}).get("supports_reasoning_effort"):
+                s["reasoning_effort"] = st.selectbox(
+                    "Reasoning effort",
+                    options=["low", "medium", "high"],
+                    index=["low", "medium", "high"].index(s.get("reasoning_effort", "medium")),
+                    help="Controls how much internal reasoning the model does — higher is slower but more thorough.",
+                )
+            else:
+                st.caption("_Reasoning effort not supported by the selected model._")
+
+        if st.button("↩️ Reset to defaults", use_container_width=True):
+            st.session_state.llm_settings = _default_settings()
+            st.rerun()
 
     st.divider()
     st.markdown("### 📄 Upload Document")
@@ -323,7 +511,7 @@ with tab1:
                         "query",
                         {
                             "question": prompt,
-                            "top_k": 10,
+                            "top_k": st.session_state.llm_settings["top_k"],
                             "filter_source": source_filter,
                         },
                     )

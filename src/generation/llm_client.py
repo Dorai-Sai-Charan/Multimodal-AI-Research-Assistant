@@ -1,11 +1,16 @@
 """
-LLM client for Google Gemini using the new google-genai SDK.
+LLM client using Groq for text generation and Google Gemini for vision tasks.
 Includes a global rate limiter and automatic retry on 429 errors.
+
+Generation parameters (model, temperature, max_tokens, top_p, penalties, seed,
+reasoning_effort) can be overridden per call via an ``llm_config`` dict so the
+frontend settings panel can drive them dynamically.
 """
 
 import time
 import threading
 import logging
+from groq import Groq
 from google import genai
 from google.genai import types
 from src.config import settings
@@ -15,19 +20,27 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 15  # seconds
 
-# Model used across the application
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+# Gemini model for vision tasks (VisionAnalyzer, EquationExtractor)
+GEMINI_MODEL = "gemini-2.0-flash"
+
+# Groq models that support the `reasoning_effort` parameter.
+REASONING_MODELS = {
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3-32b",
+    "groq/compound",
+    "groq/compound-mini",
+}
 
 
-class _RateLimiter:
+class _GeminiRateLimiter:
     """
-    Global rate limiter shared by ALL Gemini calls.
-    gemini-2.5-flash-lite free tier: higher limits than flash.
+    Rate limiter for Gemini Vision calls only (used during ingestion).
     """
 
     _lock = threading.Lock()
     _last_call: float = 0.0
-    MIN_INTERVAL = 4.0  # seconds between API calls
+    MIN_INTERVAL = 4.0
 
     @classmethod
     def wait(cls):
@@ -36,7 +49,7 @@ class _RateLimiter:
             elapsed = now - cls._last_call
             if elapsed < cls.MIN_INTERVAL:
                 gap = cls.MIN_INTERVAL - elapsed
-                logger.debug(f"Rate limiter: sleeping {gap:.1f}s")
+                logger.debug(f"Gemini rate limiter: sleeping {gap:.1f}s")
                 time.sleep(gap)
             cls._last_call = time.time()
 
@@ -44,10 +57,10 @@ class _RateLimiter:
 def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
     """
     Shared Gemini API caller with rate limiting and retry.
-    Used by LLMClient, VisionAnalyzer, and EquationExtractor.
+    Used by VisionAnalyzer and EquationExtractor for image-based tasks.
     """
     for attempt in range(1, MAX_RETRIES + 1):
-        _RateLimiter.wait()
+        _GeminiRateLimiter.wait()
         try:
             response = client.models.generate_content(
                 model=GEMINI_MODEL,
@@ -63,7 +76,7 @@ def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                 wait = RETRY_BASE_DELAY * attempt
                 logger.warning(
-                    f"Rate limited (attempt {attempt}/{MAX_RETRIES}). "
+                    f"Gemini rate limited (attempt {attempt}/{MAX_RETRIES}). "
                     f"Waiting {wait}s…"
                 )
                 time.sleep(wait)
@@ -73,30 +86,102 @@ def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
 
 
 class LLMClient:
-    """Google Gemini LLM client with built-in rate limiting and retry."""
+    """Groq LLM client for text generation with automatic retry."""
 
     def __init__(self):
-        if not settings.gemini_api_key:
+        if not settings.groq_api_key:
             raise ValueError(
-                "GEMINI_API_KEY is not set. "
-                "Get one from https://aistudio.google.com/apikey "
+                "GROQ_API_KEY is not set. "
+                "Get one from https://console.groq.com/keys "
                 "and add it to your .env file."
             )
-        self.client = genai.Client(api_key=settings.gemini_api_key)
-        logger.info(f"Gemini LLM client initialized (model: {GEMINI_MODEL})")
+        self.client = Groq(api_key=settings.groq_api_key)
+        logger.info(f"Groq LLM client initialized (default model: {settings.llm_model})")
+
+    # ------------------------------------------------------------------
+    # Config resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_config(llm_config: dict | None) -> dict:
+        """Merge a user-supplied override dict with the app defaults."""
+        cfg = {
+            "model": settings.llm_model,
+            "temperature": settings.llm_temperature,
+            "max_tokens": settings.llm_max_tokens,
+            "top_p": settings.llm_top_p,
+            "frequency_penalty": settings.llm_frequency_penalty,
+            "presence_penalty": settings.llm_presence_penalty,
+            "seed": None,
+            "reasoning_effort": settings.llm_reasoning_effort,
+        }
+        if llm_config:
+            for k, v in llm_config.items():
+                if v is not None and k in cfg:
+                    cfg[k] = v
+        return cfg
+
+    # ------------------------------------------------------------------
+    # Generation
+    # ------------------------------------------------------------------
 
     def generate(
         self,
         prompt: str,
-        temperature: float = 0.3,
-        max_tokens: int = 2048,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: dict | None = None,
     ) -> str:
-        """Generate a response with rate limiting and automatic retry."""
-        return gemini_call_with_retry(
-            self.client, prompt, temperature=temperature, max_tokens=max_tokens
-        )
+        """
+        Generate a response using Groq with automatic retry on rate limits.
 
-    def generate_with_context(self, prompt_template: str, **kwargs) -> str:
+        ``temperature`` / ``max_tokens`` remain as positional-friendly shortcuts
+        so existing callers keep working; ``llm_config`` is the full override
+        dict driven by the frontend settings panel.
+        """
+        cfg = self._resolve_config(llm_config)
+        if temperature is not None:
+            cfg["temperature"] = temperature
+        if max_tokens is not None:
+            cfg["max_tokens"] = max_tokens
+
+        kwargs: dict = {
+            "model": cfg["model"],
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": cfg["temperature"],
+            "max_tokens": cfg["max_tokens"],
+            "top_p": cfg["top_p"],
+            "frequency_penalty": cfg["frequency_penalty"],
+            "presence_penalty": cfg["presence_penalty"],
+        }
+        if cfg["seed"] is not None:
+            kwargs["seed"] = int(cfg["seed"])
+        if cfg["model"] in REASONING_MODELS and cfg["reasoning_effort"]:
+            kwargs["reasoning_effort"] = cfg["reasoning_effort"]
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "rate" in error_str.lower():
+                    wait = RETRY_BASE_DELAY * attempt
+                    logger.warning(
+                        f"Groq rate limited (attempt {attempt}/{MAX_RETRIES}). "
+                        f"Waiting {wait}s…"
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+        raise RuntimeError("Groq API rate limit exceeded after all retries.")
+
+    def generate_with_context(
+        self,
+        prompt_template: str,
+        llm_config: dict | None = None,
+        **kwargs,
+    ) -> str:
         """Generate using a prompt template with variable substitution."""
         prompt = prompt_template.format(**kwargs)
-        return self.generate(prompt)
+        return self.generate(prompt, llm_config=llm_config)

@@ -17,8 +17,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 class Settings(BaseSettings):
     """Application settings loaded from .env file."""
 
-    # Gemini
+    # Gemini (used for vision tasks only)
     gemini_api_key: str = ""
+
+    # Groq (used for text generation)
+    groq_api_key: str = ""
 
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -42,6 +45,15 @@ class Settings(BaseSettings):
     # Retrieval
     top_k: int = 10
     similarity_threshold: float = 0.3
+
+    # LLM generation defaults (overridable per request from the UI)
+    llm_model: str = "llama-3.3-70b-versatile"
+    llm_temperature: float = 0.2
+    llm_max_tokens: int = 2048
+    llm_top_p: float = 1.0
+    llm_frequency_penalty: float = 0.0
+    llm_presence_penalty: float = 0.0
+    llm_reasoning_effort: str = "medium"  # low | medium | high (reasoning models only)
 
     class Config:
         env_file = ".env"
