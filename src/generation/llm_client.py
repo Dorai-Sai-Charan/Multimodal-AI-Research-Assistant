@@ -1,6 +1,10 @@
 """
 LLM client using Groq for text generation and Google Gemini for vision tasks.
 Includes a global rate limiter and automatic retry on 429 errors.
+
+Generation parameters (model, temperature, max_tokens, top_p, penalties, seed,
+reasoning_effort) can be overridden per call via an ``llm_config`` dict so the
+frontend settings panel can drive them dynamically.
 """
 
 import time
@@ -16,11 +20,17 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 15  # seconds
 
-# Groq model for text generation
-GROQ_MODEL = "llama-3.3-70b-versatile"
-
 # Gemini model for vision tasks (VisionAnalyzer, EquationExtractor)
 GEMINI_MODEL = "gemini-2.0-flash"
+
+# Groq models that support the `reasoning_effort` parameter.
+REASONING_MODELS = {
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3-32b",
+    "groq/compound",
+    "groq/compound-mini",
+}
 
 
 class _GeminiRateLimiter:
@@ -86,23 +96,72 @@ class LLMClient:
                 "and add it to your .env file."
             )
         self.client = Groq(api_key=settings.groq_api_key)
-        logger.info(f"Groq LLM client initialized (model: {GROQ_MODEL})")
+        logger.info(f"Groq LLM client initialized (default model: {settings.llm_model})")
+
+    # ------------------------------------------------------------------
+    # Config resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_config(llm_config: dict | None) -> dict:
+        """Merge a user-supplied override dict with the app defaults."""
+        cfg = {
+            "model": settings.llm_model,
+            "temperature": settings.llm_temperature,
+            "max_tokens": settings.llm_max_tokens,
+            "top_p": settings.llm_top_p,
+            "frequency_penalty": settings.llm_frequency_penalty,
+            "presence_penalty": settings.llm_presence_penalty,
+            "seed": None,
+            "reasoning_effort": settings.llm_reasoning_effort,
+        }
+        if llm_config:
+            for k, v in llm_config.items():
+                if v is not None and k in cfg:
+                    cfg[k] = v
+        return cfg
+
+    # ------------------------------------------------------------------
+    # Generation
+    # ------------------------------------------------------------------
 
     def generate(
         self,
         prompt: str,
-        temperature: float = 0.2,
-        max_tokens: int = 2048,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: dict | None = None,
     ) -> str:
-        """Generate a response using Groq with automatic retry on rate limits."""
+        """
+        Generate a response using Groq with automatic retry on rate limits.
+
+        ``temperature`` / ``max_tokens`` remain as positional-friendly shortcuts
+        so existing callers keep working; ``llm_config`` is the full override
+        dict driven by the frontend settings panel.
+        """
+        cfg = self._resolve_config(llm_config)
+        if temperature is not None:
+            cfg["temperature"] = temperature
+        if max_tokens is not None:
+            cfg["max_tokens"] = max_tokens
+
+        kwargs: dict = {
+            "model": cfg["model"],
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": cfg["temperature"],
+            "max_tokens": cfg["max_tokens"],
+            "top_p": cfg["top_p"],
+            "frequency_penalty": cfg["frequency_penalty"],
+            "presence_penalty": cfg["presence_penalty"],
+        }
+        if cfg["seed"] is not None:
+            kwargs["seed"] = int(cfg["seed"])
+        if cfg["model"] in REASONING_MODELS and cfg["reasoning_effort"]:
+            kwargs["reasoning_effort"] = cfg["reasoning_effort"]
+
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                response = self.client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+                response = self.client.chat.completions.create(**kwargs)
                 return response.choices[0].message.content.strip()
             except Exception as e:
                 error_str = str(e)
@@ -117,7 +176,12 @@ class LLMClient:
                 raise
         raise RuntimeError("Groq API rate limit exceeded after all retries.")
 
-    def generate_with_context(self, prompt_template: str, **kwargs) -> str:
+    def generate_with_context(
+        self,
+        prompt_template: str,
+        llm_config: dict | None = None,
+        **kwargs,
+    ) -> str:
         """Generate using a prompt template with variable substitution."""
         prompt = prompt_template.format(**kwargs)
-        return self.generate(prompt)
+        return self.generate(prompt, llm_config=llm_config)

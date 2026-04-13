@@ -48,6 +48,7 @@ class ResearchAgent:
         self,
         question: str,
         chat_history: list[dict] | None = None,
+        llm_config: dict | None = None,
     ) -> AgentResponse:
         """
         Execute the ReAct loop for the given question.
@@ -68,7 +69,9 @@ class ResearchAgent:
         for iteration in range(MAX_ITERATIONS):
             logger.info(f"Agent iteration {iteration + 1}/{MAX_ITERATIONS}")
 
-            raw = self.llm.generate(prompt, temperature=0.1, max_tokens=1024)
+            raw = self.llm.generate(
+                prompt, temperature=0.1, max_tokens=1024, llm_config=llm_config
+            )
             thought, action, action_input = self._parse(raw)
 
             logger.info(f"  Thought: {thought[:120]}")
@@ -131,7 +134,9 @@ class ResearchAgent:
             "Action: finish\n"
             'Action Input: {"answer": "'
         )
-        final_raw = self.llm.generate(synthesis_prompt, temperature=0.2, max_tokens=2048)
+        final_raw = self.llm.generate(
+            synthesis_prompt, temperature=0.2, max_tokens=2048, llm_config=llm_config
+        )
         # The model may or may not include the closing quote/brace — extract best effort
         final_answer = self._extract_finish_answer(final_raw)
 

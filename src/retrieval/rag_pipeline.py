@@ -3,6 +3,10 @@ RAG Pipeline — combines retrieval and generation.
 Covers: Q&A, summarization, paper comparison, literature survey,
 research gap identification, concept explanation, paper recommendation,
 research trend analysis, and multi-document reasoning.
+
+All public methods accept an optional ``llm_config`` dict (model + generation
+parameters) and ``similarity_threshold`` so the frontend settings panel can
+override them per request.
 """
 
 import logging
@@ -43,12 +47,17 @@ class RAGPipeline:
         question: str,
         top_k: int = 10,
         filter_source: str | None = None,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
     ) -> GenerationResponse:
         """Answer a question using retrieved context."""
         logger.info(f"RAG query: '{question[:80]}'")
 
         results = self.retriever.retrieve(
-            query=question, top_k=top_k, filter_source=filter_source
+            query=question,
+            top_k=top_k,
+            filter_source=filter_source,
+            similarity_threshold=similarity_threshold,
         )
 
         if not results:
@@ -65,7 +74,7 @@ class RAGPipeline:
 
         context = self.retriever.build_context(results)
         answer = self.llm_client.generate_with_context(
-            QA_PROMPT, context=context, question=question
+            QA_PROMPT, llm_config=llm_config, context=context, question=question
         )
 
         return GenerationResponse(
@@ -84,11 +93,16 @@ class RAGPipeline:
         self,
         source_file: str | None = None,
         top_k: int = 20,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
     ) -> GenerationResponse:
         """Summarize a specific paper or all uploaded papers."""
         query = "main contributions methodology results conclusions abstract"
         results = self.retriever.retrieve(
-            query=query, top_k=top_k, filter_source=source_file
+            query=query,
+            top_k=top_k,
+            filter_source=source_file,
+            similarity_threshold=similarity_threshold,
         )
 
         if not results:
@@ -99,7 +113,9 @@ class RAGPipeline:
             )
 
         context = self.retriever.build_context(results, max_context_length=6000)
-        answer = self.llm_client.generate_with_context(SUMMARIZE_PROMPT, context=context)
+        answer = self.llm_client.generate_with_context(
+            SUMMARIZE_PROMPT, llm_config=llm_config, context=context
+        )
 
         return GenerationResponse(
             answer=answer,
@@ -113,22 +129,24 @@ class RAGPipeline:
     # 3. Paper Comparison
     # ------------------------------------------------------------------
 
-    def compare(self, paper1: str, paper2: str) -> GenerationResponse:
-        """
-        Compare two research papers side-by-side.
-
-        Args:
-            paper1: Filename of the first paper.
-            paper2: Filename of the second paper.
-        """
+    def compare(
+        self,
+        paper1: str,
+        paper2: str,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
+    ) -> GenerationResponse:
+        """Compare two research papers side-by-side."""
         logger.info(f"Comparing: '{paper1}' vs '{paper2}'")
         broad_query = "methodology approach contributions results evaluation"
 
         results_a = self.retriever.retrieve(
-            query=broad_query, top_k=15, filter_source=paper1
+            query=broad_query, top_k=15, filter_source=paper1,
+            similarity_threshold=similarity_threshold,
         )
         results_b = self.retriever.retrieve(
-            query=broad_query, top_k=15, filter_source=paper2
+            query=broad_query, top_k=15, filter_source=paper2,
+            similarity_threshold=similarity_threshold,
         )
 
         if not results_a and not results_b:
@@ -143,6 +161,7 @@ class RAGPipeline:
 
         answer = self.llm_client.generate_with_context(
             COMPARE_PAPERS_PROMPT,
+            llm_config=llm_config,
             paper1_name=paper1,
             context_a=context_a,
             paper2_name=paper2,
@@ -165,12 +184,16 @@ class RAGPipeline:
         self,
         topic: str = "",
         top_k: int = 30,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
     ) -> GenerationResponse:
         """Generate a literature survey from the uploaded papers."""
         logger.info(f"Literature survey on topic: '{topic or 'general'}'")
 
         query = topic if topic else "contributions methodology evaluation results"
-        results = self.retriever.retrieve(query=query, top_k=top_k)
+        results = self.retriever.retrieve(
+            query=query, top_k=top_k, similarity_threshold=similarity_threshold
+        )
 
         if not results:
             return GenerationResponse(
@@ -182,6 +205,7 @@ class RAGPipeline:
         context = self.retriever.build_context(results, max_context_length=8000)
         answer = self.llm_client.generate_with_context(
             LITERATURE_SURVEY_PROMPT,
+            llm_config=llm_config,
             topic=topic or "the uploaded research papers",
             context=context,
         )
@@ -198,7 +222,12 @@ class RAGPipeline:
     # 5. Research Gap Identification
     # ------------------------------------------------------------------
 
-    def identify_gaps(self, source_file: str | None = None) -> GenerationResponse:
+    def identify_gaps(
+        self,
+        source_file: str | None = None,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
+    ) -> GenerationResponse:
         """Identify research gaps and future directions from uploaded papers."""
         logger.info("Identifying research gaps")
 
@@ -213,7 +242,8 @@ class RAGPipeline:
 
         for q in gap_queries:
             for r in self.retriever.retrieve(
-                query=q, top_k=10, filter_source=source_file
+                query=q, top_k=10, filter_source=source_file,
+                similarity_threshold=similarity_threshold,
             ):
                 if r.chunk.id not in seen_ids:
                     all_results.append(r)
@@ -228,7 +258,7 @@ class RAGPipeline:
 
         context = self.retriever.build_context(all_results, max_context_length=6000)
         answer = self.llm_client.generate_with_context(
-            RESEARCH_GAP_PROMPT, context=context
+            RESEARCH_GAP_PROMPT, llm_config=llm_config, context=context
         )
 
         return GenerationResponse(
@@ -247,14 +277,15 @@ class RAGPipeline:
         self,
         concept: str,
         source_file: str | None = None,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
     ) -> GenerationResponse:
-        """
-        Explain a technical concept, diagram description, or table found in the papers.
-        """
+        """Explain a technical concept, diagram description, or table found in the papers."""
         logger.info(f"Explaining concept: '{concept}'")
 
         results = self.retriever.retrieve(
-            query=concept, top_k=12, filter_source=source_file
+            query=concept, top_k=12, filter_source=source_file,
+            similarity_threshold=similarity_threshold,
         )
 
         if not results:
@@ -266,7 +297,10 @@ class RAGPipeline:
 
         context = self.retriever.build_context(results, max_context_length=5000)
         answer = self.llm_client.generate_with_context(
-            CONCEPT_EXPLANATION_PROMPT, concept=concept, context=context
+            CONCEPT_EXPLANATION_PROMPT,
+            llm_config=llm_config,
+            concept=concept,
+            context=context,
         )
 
         return GenerationResponse(
@@ -281,11 +315,19 @@ class RAGPipeline:
     # 7. Related Paper Recommendation
     # ------------------------------------------------------------------
 
-    def recommend(self, interest: str, top_k: int = 20) -> GenerationResponse:
+    def recommend(
+        self,
+        interest: str,
+        top_k: int = 20,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
+    ) -> GenerationResponse:
         """Recommend which uploaded papers are most relevant to a given interest."""
         logger.info(f"Recommending papers for: '{interest}'")
 
-        results = self.retriever.retrieve(query=interest, top_k=top_k)
+        results = self.retriever.retrieve(
+            query=interest, top_k=top_k, similarity_threshold=similarity_threshold
+        )
 
         if not results:
             return GenerationResponse(
@@ -296,7 +338,10 @@ class RAGPipeline:
 
         context = self.retriever.build_context(results, max_context_length=6000)
         answer = self.llm_client.generate_with_context(
-            RECOMMENDATION_PROMPT, query=interest, context=context
+            RECOMMENDATION_PROMPT,
+            llm_config=llm_config,
+            query=interest,
+            context=context,
         )
 
         return GenerationResponse(
@@ -311,7 +356,11 @@ class RAGPipeline:
     # 8. Research Trend Analysis
     # ------------------------------------------------------------------
 
-    def analyze_trends(self) -> GenerationResponse:
+    def analyze_trends(
+        self,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
+    ) -> GenerationResponse:
         """Analyse research trends across all uploaded papers."""
         logger.info("Analysing research trends")
 
@@ -325,7 +374,9 @@ class RAGPipeline:
         seen_ids: set[str] = set()
 
         for q in trend_queries:
-            for r in self.retriever.retrieve(query=q, top_k=15):
+            for r in self.retriever.retrieve(
+                query=q, top_k=15, similarity_threshold=similarity_threshold
+            ):
                 if r.chunk.id not in seen_ids:
                     all_results.append(r)
                     seen_ids.add(r.chunk.id)
@@ -339,7 +390,7 @@ class RAGPipeline:
 
         context = self.retriever.build_context(all_results, max_context_length=8000)
         answer = self.llm_client.generate_with_context(
-            TREND_ANALYSIS_PROMPT, context=context
+            TREND_ANALYSIS_PROMPT, llm_config=llm_config, context=context
         )
 
         return GenerationResponse(
@@ -358,6 +409,8 @@ class RAGPipeline:
         self,
         question: str,
         top_k: int = 20,
+        llm_config: dict | None = None,
+        similarity_threshold: float | None = None,
     ) -> GenerationResponse:
         """
         Answer a question by synthesising information across multiple papers.
@@ -365,7 +418,9 @@ class RAGPipeline:
         """
         logger.info(f"Multi-doc query: '{question[:80]}'")
 
-        results = self.retriever.retrieve(query=question, top_k=top_k)
+        results = self.retriever.retrieve(
+            query=question, top_k=top_k, similarity_threshold=similarity_threshold
+        )
 
         if not results:
             return GenerationResponse(
@@ -376,7 +431,10 @@ class RAGPipeline:
 
         context = self.retriever.build_context(results, max_context_length=7000)
         answer = self.llm_client.generate_with_context(
-            MULTI_DOC_PROMPT, question=question, context=context
+            MULTI_DOC_PROMPT,
+            llm_config=llm_config,
+            question=question,
+            context=context,
         )
 
         return GenerationResponse(

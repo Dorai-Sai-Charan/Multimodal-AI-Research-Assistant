@@ -26,6 +26,7 @@ class Retriever:
         top_k: int = 10,
         filter_source: str | None = None,
         filter_type: str | None = None,
+        similarity_threshold: float | None = None,
     ) -> list[QueryResult]:
         """
         Retrieve relevant chunks for a given query.
@@ -51,6 +52,14 @@ class Retriever:
             filter_source=filter_source,
             filter_type=filter_type,
         )
+
+        if similarity_threshold is not None and similarity_threshold > 0:
+            before = len(results)
+            results = [r for r in results if r.score >= similarity_threshold]
+            logger.info(
+                f"Similarity threshold {similarity_threshold} filtered "
+                f"{before - len(results)}/{before} results"
+            )
 
         logger.info(f"Retrieved {len(results)} relevant chunks")
         return results
