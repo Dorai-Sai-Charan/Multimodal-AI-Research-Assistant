@@ -79,6 +79,7 @@ class QueryRequest(TunableRequest):
 class AgentQueryRequest(TunableRequest):
     question: str
     chat_history: list[dict] = []
+    filter_source: str | None = None
 
 
 class SummarizeRequest(TunableRequest):
@@ -303,6 +304,7 @@ async def agent_query(request: AgentQueryRequest):
                 request.llm_config.model_dump(exclude_none=True)
                 if request.llm_config else None
             ),
+            filter_source=request.filter_source,
         )
         return AgentQueryResponse(
             answer=resp.answer,
@@ -502,13 +504,6 @@ AVAILABLE_MODELS = [
         "label": "Qwen3 32B — Strong reasoning (multilingual)",
         "family": "Qwen",
         "best_for": "Technical reasoning, math-heavy papers, non-English content",
-        "supports_reasoning_effort": True,
-    },
-    {
-        "id": "groq/compound",
-        "label": "Groq Compound — Agentic / tool-use",
-        "family": "Groq",
-        "best_for": "Agent Mode multi-hop workflows and tool calling",
         "supports_reasoning_effort": True,
     },
     {

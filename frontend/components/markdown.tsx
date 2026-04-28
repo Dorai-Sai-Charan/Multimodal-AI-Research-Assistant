@@ -19,7 +19,7 @@ export function Markdown({ content, className }: MarkdownProps) {
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex, rehypeHighlight]}
       >
-        {content}
+        {typeof content === "object" ? JSON.stringify(content) : content}
       </ReactMarkdown>
     </div>
   );

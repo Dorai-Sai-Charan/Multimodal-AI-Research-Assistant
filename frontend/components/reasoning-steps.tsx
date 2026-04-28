@@ -49,7 +49,12 @@ export function ReasoningSteps({ steps }: ReasoningStepsProps) {
                     {s.action}
                   </code>
                   {s.action_input && (
-                    <span className="text-slate-400 ml-2">— {s.action_input}</span>
+                    <span className="text-slate-400 ml-2">
+                      —{" "}
+                      {typeof s.action_input === "object"
+                        ? JSON.stringify(s.action_input)
+                        : s.action_input}
+                    </span>
                   )}
                 </div>
               </div>
@@ -60,7 +65,9 @@ export function ReasoningSteps({ steps }: ReasoningStepsProps) {
                     Observation:{" "}
                   </span>
                   <span className="text-slate-400">
-                    {truncate(s.observation, 300)}
+                    {typeof s.observation === "object"
+                      ? JSON.stringify(s.observation)
+                      : truncate(s.observation, 300)}
                   </span>
                 </div>
               </div>

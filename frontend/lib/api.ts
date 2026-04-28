@@ -125,6 +125,7 @@ export async function agentQuery(
   payload: TunablePayload & {
     question: string;
     chat_history: { role: string; content: string }[];
+    filter_source?: string | null;
   },
 ): Promise<AgentQueryResponse> {
   return request<AgentQueryResponse>(

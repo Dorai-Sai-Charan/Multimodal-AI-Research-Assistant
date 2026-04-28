@@ -95,7 +95,7 @@ Artificial Intelligence (Multimodal AI and Agentic Systems)
       │  FINISH: synthesise final answer                          │
       │                                                           │
       ▼                                                           │
- Gemini LLM → Answer + Citations → Streamlit UI                  │
+ Gemini LLM → Answer + Citations → Next.js UI                    │
 ──────────────────────────────────────────────────────────────────
 ```
 
@@ -222,7 +222,7 @@ A global thread-safe rate limiter is shared across all Gemini API calls (LLM gen
 | PDF Processing | PyMuPDF + pdfplumber | 1.25.3 / 0.11.4 |
 | Chunking | LangChain Text Splitters | 0.3.4 |
 | OCR | EasyOCR | 1.7.2 |
-| Frontend | Streamlit | 1.41.1 |
+| Frontend | Next.js + Tailwind CSS | 15.1.3 |
 | Metadata DB | SQLite | Built-in |
 | Config | Pydantic Settings + python-dotenv | 2.7.1 |
 
@@ -232,48 +232,51 @@ A global thread-safe rate limiter is shared across all Gemini API calls (LLM gen
 
 ```
 Multimodal-AI-Research-Assistant/
+├── frontend/                       # Next.js Frontend (Modern UI)
+│   ├── app/                        # Pages and layouts
+│   ├── components/                 # React components
+│   └── lib/                        # Hooks and API client
+│
 ├── src/
 │   ├── main.py                     # FastAPI entry point (Uvicorn server)
 │   ├── config.py                   # Pydantic settings from .env
 │   │
 │   ├── models/
-│   │   └── schemas.py              # Chunk, DocumentInfo, QueryResult,
-│   │                               # GenerationResponse, AgentStep, AgentResponse
+│   │   └── schemas.py              # Pydantic models for API
 │   ├── ingestion/
-│   │   ├── pipeline.py             # End-to-end ingestion orchestration
-│   │   ├── pdf_processor.py        # Text extraction with heading detection
-│   │   ├── table_extractor.py      # Table extraction → Markdown
-│   │   ├── image_extractor.py      # Image extraction and saving
-│   │   ├── ocr_processor.py        # EasyOCR for scanned documents
-│   │   ├── vision_analyzer.py      # Gemini Vision image analysis
-│   │   ├── equation_extractor.py   # Equation → LaTeX conversion
-│   │   └── chunker.py              # RecursiveCharacterTextSplitter
+│   │   ├── pipeline.py             # Ingestion orchestration
+│   │   ├── pdf_processor.py        # Text extraction
+│   │   ├── table_extractor.py      # Table parsing
+│   │   ├── image_extractor.py      # Image extraction
+│   │   ├── ocr_processor.py        # OCR for images
+│   │   ├── vision_analyzer.py      # Gemini Vision integration
+│   │   ├── equation_extractor.py   # LaTeX extraction
+│   │   └── chunker.py              # Semantic splitting
 │   │
 │   ├── storage/
-│   │   ├── embedding_service.py    # Singleton sentence-transformer embeddings
-│   │   ├── vector_store.py         # ChromaDB CRUD + similarity search
-│   │   └── document_store.py       # SQLite document metadata
+│   │   ├── embedding_service.py    # Vector embeddings
+│   │   ├── vector_store.py         # ChromaDB management
+│   │   └── document_store.py       # SQL metadata store
 │   │
 │   ├── retrieval/
-│   │   ├── retriever.py            # Embed query → vector search → rank
-│   │   └── rag_pipeline.py         # 9 pipeline methods (QA, compare, survey, ...)
+│   │   ├── retriever.py            # Search logic
+│   │   └── rag_pipeline.py         # RAG methods (QA, summary, etc.)
 │   │
 │   ├── generation/
-│   │   ├── llm_client.py           # Gemini client + rate limiter + retry
-│   │   └── prompts.py              # 10 prompt templates
+│   │   ├── llm_client.py           # Gemini LLM interface
+│   │   └── prompts.py              # Prompt templates
 │   │
 │   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── research_agent.py       # ReAct agent (Thought/Action/Observation loop)
-│   │   └── tools.py                # Agent tool implementations
+│   │   ├── research_agent.py       # ReAct agent implementation
+│   │   └── tools.py                # Agent tools definition
 │   │
 │   ├── api/
-│   │   └── routes.py               # 12 FastAPI REST endpoints
+│   │   └── routes.py               # REST API endpoints
 │   │
 │   └── ui/
-│       └── app.py                  # Streamlit UI (5 tabs, 20 features)
+│       └── app.py                  # Streamlit UI (Legacy)
 │
-├── data/                           # Runtime data (auto-created)
+├── data/                           # Local storage (ignored by git)
 │   ├── uploads/                    # Uploaded PDF files
 │   ├── images/                     # Extracted images
 │   ├── chroma_db/                  # ChromaDB persistent storage
@@ -351,11 +354,12 @@ Swagger docs available at **http://localhost:8000/docs**.
 ### 4. Run the Frontend (Terminal 2)
 
 ```bash
-source venv/bin/activate
-streamlit run src/ui/app.py --server.port 8501
+cd frontend
+npm install
+npm run dev
 ```
 
-The Streamlit UI opens at **http://localhost:8501**.
+The Frontend UI opens at **http://localhost:3000**.
 
 ### 5. Use the Application
 

@@ -169,6 +169,7 @@ export function ChatPanel() {
           ...tunable,
           question: q,
           chat_history: history,
+          filter_source: filter === "__all__" ? null : filter,
         });
         content = resp.answer;
         citations = resp.citations;

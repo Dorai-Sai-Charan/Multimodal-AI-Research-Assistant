@@ -16,12 +16,18 @@ class EquationExtractor:
     """Extracts and explains equations using Gemini Vision."""
 
     def __init__(self):
-        if not settings.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY is not set.")
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.enabled = bool(settings.gemini_api_key)
+        if not self.enabled:
+            logger.warning("GEMINI_API_KEY is not set. Equation extraction features will be disabled.")
+            self.client = None
+        else:
+            self.client = genai.Client(api_key=settings.gemini_api_key)
 
     def extract_from_image(self, image_path: str) -> dict:
         """Extract LaTeX from an image and provide an explanation (with retry)."""
+        if not self.enabled:
+            return {"latex": "", "explanation": "Equation extraction disabled: GEMINI_API_KEY not set."}
+
         prompt = (
             "This is an image from a research paper containing an equation. "
             "1. Extract the equation as a clean LaTeX string. "

@@ -43,6 +43,40 @@ class AgentTools:
         """Search mathematical equations and formulas in the uploaded papers."""
         return self._search(query, content_type="equation", source_file=source_file)
 
+    def get_paper_preview(self, source_file: str) -> str:
+        """
+        Return the first few chunks of a specific paper.
+        Best for finding Title, Authors, Abstract, and Introduction.
+        """
+        source_file = source_file.strip()
+        # We search specifically for chunk_index 0, 1, 2 for this paper
+        # ChromaDB's .get() is more efficient than .query() for metadata-only lookups
+        results = self.vector_store.collection.get(
+            where={
+                "$and": [
+                    {"source_file": source_file},
+                    {"chunk_index": {"$in": [0, 1, 2]}}
+                ]
+            },
+            include=["documents", "metadatas"]
+        )
+
+        if not results or not results["documents"]:
+            return f"No preview available for paper '{source_file}'."
+
+        # Sort by chunk_index to ensure logical order
+        combined = []
+        for doc, meta in zip(results["documents"], results["metadatas"]):
+            combined.append((meta.get("chunk_index", 0), doc))
+        
+        combined.sort(key=lambda x: x[0])
+        
+        preview = f"Preview of top sections in '{source_file}':\n\n"
+        for idx, text in combined:
+            preview += f"--- [Chunk {idx}] ---\n{text}\n\n"
+        
+        return preview
+
     def get_paper_list(self) -> str:
         """Return a list of all successfully ingested research papers."""
         docs = self.document_store.get_all_documents()

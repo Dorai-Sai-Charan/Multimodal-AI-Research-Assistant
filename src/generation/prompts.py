@@ -198,15 +198,17 @@ AVAILABLE TOOLS:
 - search_text: Search textual content in papers. Input: {{"query": "...", "source_file": "optional filename"}}
 - search_tables: Search tables and structured data. Input: {{"query": "...", "source_file": "optional"}}
 - search_figures: Search figure descriptions and diagrams. Input: {{"query": "...", "source_file": "optional"}}
-- search_equations: Search mathematical equations and formulas. Input: {{"query": "...", "source_file": "optional"}}
+- search_equations: Search mathematical formulas and their explanations. Input: {{"query": "...", "source_file": "optional"}}
+- get_paper_preview: Fetch the first few sections of a paper. HIGHLY RECOMMENDED for finding Title, Authors, and Abstract. Input: {{"source_file": "filename"}}
 - get_paper_list: List all available papers. Input: {{}}
 - finish: Provide the final answer. Input: {{"answer": "your complete answer with citations"}}
 
 RULES:
 - Use the EXACT format below — no deviations.
-- Always search before answering; never guess.
+- ALWAYS search before answering.
+- If you need basic metadata like Title or Authors, use get_paper_preview first.
 - Cite sources as [Paper: filename, Page X] in the final answer.
-- For multi-hop questions, search multiple times with refined queries.
+- NEVER repeat the exact same tool call twice in a row if the result was not helpful. Try a different query or a different tool.
 - Call finish when you have enough information.
 
 FORMAT:
@@ -221,3 +223,21 @@ Action Input: {{"answer": "complete answer"}}
 {history}
 Question: {question}
 Thought:"""
+
+# Prompt for when the agent fails or reaches limit — used for cross-questioning
+AGENT_CLARIFICATION_PROMPT = """You are an AI research assistant that has been trying to answer a complex question but got stuck or reached a reasoning limit.
+
+Your task is to summarize what you've found so far and ask the user a specific, helpful clarifying question to help you proceed.
+
+ORIGINAL QUESTION: {question}
+
+YOUR REASONING TRACE SO FAR:
+{trace}
+
+GUIDELINES:
+1. Briefly state what you successfully found (if anything).
+2. Explain what specific information you are missing or where you got confused.
+3. Ask ONE clear clarifying question that would solve the bottleneck.
+4. Be professional and helpful.
+
+CLARIFICATION:"""

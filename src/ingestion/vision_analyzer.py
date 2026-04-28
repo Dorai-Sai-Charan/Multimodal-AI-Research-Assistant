@@ -16,12 +16,18 @@ class VisionAnalyzer:
     """Analyzes images using Gemini Vision models."""
 
     def __init__(self):
-        if not settings.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY is not set.")
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.enabled = bool(settings.gemini_api_key)
+        if not self.enabled:
+            logger.warning("GEMINI_API_KEY is not set. Vision analysis features will be disabled.")
+            self.client = None
+        else:
+            self.client = genai.Client(api_key=settings.gemini_api_key)
 
     def analyze(self, image_path: str, prompt: str = None) -> str:
         """Analyze an image and return a text description (with retry)."""
+        if not self.enabled:
+            return "[Vision analysis disabled: GEMINI_API_KEY is not set]"
+
         if prompt is None:
             prompt = (
                 "Describe this image from a research paper in detail. "

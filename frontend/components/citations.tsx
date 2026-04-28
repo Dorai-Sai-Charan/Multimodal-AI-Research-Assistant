@@ -27,7 +27,9 @@ export function Citations({ citations }: CitationsProps) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="text-sm font-medium text-slate-200 truncate">
-                  {c.source_file}
+                  {typeof c.source_file === "object"
+                    ? JSON.stringify(c.source_file)
+                    : c.source_file}
                 </span>
                 <span className="text-xs text-slate-500">
                   · Page {c.page_number}

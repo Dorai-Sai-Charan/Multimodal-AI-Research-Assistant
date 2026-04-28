@@ -23,7 +23,7 @@ export interface ReasoningStep {
   step: number;
   thought: string;
   action: string;
-  action_input: string;
+  action_input: string | Record<string, any>;
   observation: string;
 }
 
