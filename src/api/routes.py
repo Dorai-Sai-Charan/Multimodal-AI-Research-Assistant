@@ -14,6 +14,12 @@ from pydantic import BaseModel, Field
 from src.ingestion.pipeline import IngestionPipeline
 from src.retrieval.rag_pipeline import RAGPipeline
 from src.agents.research_agent import ResearchAgent
+from src.generation.humanizer import HumanizationEngine
+from src.models.schemas import (
+    TextAnalysisRequest,
+    AIDetectionResponse,
+    HumanizationResponse,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,6 +31,7 @@ router = APIRouter()
 _ingestion_pipeline: IngestionPipeline | None = None
 _rag_pipeline: RAGPipeline | None = None
 _agent: ResearchAgent | None = None
+_humanizer: HumanizationEngine | None = None
 
 
 def get_ingestion_pipeline() -> IngestionPipeline:
@@ -46,6 +53,13 @@ def get_agent() -> ResearchAgent:
     if _agent is None:
         _agent = ResearchAgent()
     return _agent
+
+
+def get_humanizer() -> HumanizationEngine:
+    global _humanizer
+    if _humanizer is None:
+        _humanizer = HumanizationEngine()
+    return _humanizer
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +468,46 @@ async def multi_doc_query(request: MultiDocRequest):
         )
     except Exception as e:
         logger.error(f"Multi-doc query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Humanizer — Detect AI content and humanize text
+# ---------------------------------------------------------------------------
+
+@router.post("/detect-ai", response_model=AIDetectionResponse)
+async def detect_ai(request: TextAnalysisRequest):
+    """
+    Analyse text for AI-generated content markers.
+    Returns: AI percentage (0-100), confidence (0-1), and explanation.
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    try:
+        logger.info(f"Detecting AI content in text ({len(request.text)} chars)")
+        response = get_humanizer().detect_ai(request.text)
+        return response
+    except Exception as e:
+        logger.error(f"AI detection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/humanize", response_model=HumanizationResponse)
+async def humanize_text(request: TextAnalysisRequest):
+    """
+    Humanize formal or AI-generated text to be more conversational.
+    Returns: original text, humanized version, and summary of changes.
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    try:
+        logger.info(f"Humanizing text ({len(request.text)} chars)")
+        response = get_humanizer().humanize(request.text)
+        return response
+    except Exception as e:
+        logger.error(f"Humanization failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

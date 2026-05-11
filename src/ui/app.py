@@ -432,12 +432,13 @@ with st.sidebar:
 
 st.title("Multimodal AI Research Assistant")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Chat Assistant",
     "Compare Papers",
     "Survey & Gaps",
     "Search & Explain",
     "Trends & Recommend",
+    "✨ Humanizer",
 ])
 
 
@@ -786,3 +787,69 @@ with tab5:
                 st.markdown(data["answer"])
                 render_citations(data.get("citations", []))
                 st.caption(f"Chunks used: {data['chunks_used']}")
+
+
+# ===========================================================================
+# TAB 6 — Humanizer
+# Covers: AI-generated content detection, text humanization
+# ===========================================================================
+
+with tab6:
+    st.markdown("#### ✨ Text Humanizer")
+    st.caption(
+        "Paste AI-generated or formal text to detect AI content "
+        "and humanize it for a more natural, conversational tone."
+    )
+
+    # Input area
+    user_text = st.text_area(
+        "Paste your text",
+        placeholder="Paste AI-generated or formal academic text here...",
+        height=200,
+        label_visibility="collapsed",
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        detect_btn = st.button("🔍 Detect AI", use_container_width=True)
+
+    with col2:
+        humanize_btn = st.button("✨ Humanize", use_container_width=True)
+
+    if detect_btn and user_text.strip():
+        with st.spinner("Analysing for AI content…"):
+            data, err = api_post("detect-ai", {"text": user_text})
+
+        if err:
+            st.error(err)
+        else:
+            # Show AI percentage as metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("AI Score", f"{data['ai_percentage']:.0f}%")
+            with col2:
+                st.metric("Confidence", f"{data['confidence']:.0%}")
+            with col3:
+                st.write("")  # spacing
+
+            # Show explanation
+            with st.expander("📊 Analysis Details"):
+                st.markdown(data["explanation"])
+
+    if humanize_btn and user_text.strip():
+        with st.spinner("Humanizing text…"):
+            data, err = api_post("humanize", {"text": user_text})
+
+        if err:
+            st.error(err)
+        else:
+            st.markdown("### 📝 Humanized Version")
+            st.markdown(data["humanized_text"])
+
+            with st.expander("📋 Changes Made"):
+                st.markdown(data["changes_made"])
+
+            # Copy-friendly code block
+            st.markdown("**Copy humanized text:**")
+            st.code(data["humanized_text"], language="text")

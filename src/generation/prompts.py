@@ -241,3 +241,45 @@ GUIDELINES:
 4. Be professional and helpful.
 
 CLARIFICATION:"""
+AI_DETECTION_PROMPT = """You are an expert at detecting AI-generated text. Analyze the following text carefully for markers of AI generation.
+
+Look for these specific patterns:
+- Formal, stiff language without contractions
+- Overly sophisticated vocabulary choices
+- Repetitive sentence structures
+- Generic or templated phrasing
+- Lack of personal voice or natural hesitations
+- Perfect grammar and flow
+- Overuse of transitional phrases
+- Vague or corporate language
+
+TEXT TO ANALYZE:
+{text}
+
+Respond with ONLY a valid JSON object (no extra text before or after). Example format:
+{{"ai_percentage": 75, "confidence": 0.85, "explanation": "This text shows high AI markers due to formal tone and repetitive phrasing.", "markers_found": ["formal tone", "repetitive structure", "corporate language"]}}
+
+Your response (JSON only):"""
+
+HUMANIZE_PROMPT = """Transform this formal/AI-generated text into a conversational, natural-sounding version. Be aggressive with changes to make it sound human.
+
+CRITICAL RULES:
+1. Use lots of contractions (it's, don't, can't, won't, that's, we've, isn't, doesn't, hasn't)
+2. Replace formal words with everyday language:
+   - "facilitate" → "help" or "make it easier to"
+   - "aforementioned" → remove it, use "that" or rephrase
+   - "implementation" → "using" or "setting up"
+   - "demonstrate" → "show"
+   - "enhance" → "improve" or "make better"
+3. Break long sentences into 2-3 shorter ones
+4. Add natural phrases like "basically", "really", "kind of", "in other words"
+5. Use "you" and "we" where appropriate
+6. Add variety - don't use the same sentence structure twice
+7. Keep all numbers, data, citations, and technical details EXACTLY as they are
+8. Remove corporate buzzwords
+9. Make it sound like a smart person talking, not a robot writing
+
+Original formal text:
+{text}
+
+Now rewrite it to sound natural and conversational:"""

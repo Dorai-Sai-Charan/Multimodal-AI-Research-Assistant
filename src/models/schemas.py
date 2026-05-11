@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
 import uuid
+from pydantic import BaseModel
 
 
 @dataclass
@@ -132,3 +133,26 @@ class AgentResponse:
     intent: str = "question_answering"
     chunks_used: int = 0
     total_steps: int = 0
+
+
+# ============================================================================
+# Humanizer Feature — Pydantic Models for API
+# ============================================================================
+
+class TextAnalysisRequest(BaseModel):
+    """Request to analyse text (detect AI or humanize)."""
+    text: str
+
+
+class AIDetectionResponse(BaseModel):
+    """Response from AI detection analysis."""
+    ai_percentage: float  # 0-100
+    confidence: float  # 0-1
+    explanation: str
+
+
+class HumanizationResponse(BaseModel):
+    """Response from text humanization."""
+    original_text: str
+    humanized_text: str
+    changes_made: str
