@@ -279,6 +279,91 @@ async def delete_document(doc_id: str):
     return {"message": f"Document {doc_id} deleted"}
 
 
+@router.get("/documents/{source_file}/visuals")
+async def get_document_visuals(source_file: str):
+    """
+    Return all visual elements (figures, tables, equations) from a document.
+
+    Filters out tiny decorative images (e.g. logos, separators under 50x50 px)
+    that aren't useful for explanation.
+    """
+    import json
+    import os
+    from urllib.parse import unquote
+    from PIL import Image
+
+    source_file = unquote(source_file)
+    MIN_IMAGE_DIM = 50  # filter out icons / pixel decorations
+
+    try:
+        vs = get_rag_pipeline().retriever.vector_store
+        results = vs.collection.get(
+            where={"source_file": source_file},
+            include=["documents", "metadatas"],
+        )
+
+        visuals = []
+        if results and results["ids"]:
+            for i, chunk_id in enumerate(results["ids"]):
+                meta = results["metadatas"][i] or {}
+                element_type = meta.get("element_type", "paragraph")
+                if element_type not in ("figure", "table", "equation"):
+                    continue
+
+                item = {
+                    "id": chunk_id,
+                    "element_type": element_type,
+                    "page_number": meta.get("page_number", 0),
+                    "section_heading": meta.get("section_heading", ""),
+                    "content": (results["documents"][i] or "")[:500],
+                }
+
+                # Image URL for figures — skip tiny decorations
+                img_path = meta.get("image_path")
+                if img_path and os.path.exists(img_path):
+                    try:
+                        with Image.open(img_path) as im:
+                            w, h = im.size
+                        if w < MIN_IMAGE_DIM or h < MIN_IMAGE_DIM:
+                            continue  # Skip this visual entirely
+                        item["image_url"] = f"/images/{os.path.basename(img_path)}"
+                        item["image_width"] = w
+                        item["image_height"] = h
+                    except Exception:
+                        # If we can't read the image, skip it
+                        continue
+                elif element_type == "figure":
+                    # Figure without a valid image path — skip
+                    continue
+
+                if meta.get("image_description"):
+                    item["image_description"] = meta["image_description"]
+
+                # Table data
+                table_json = meta.get("table_data_json")
+                if table_json:
+                    try:
+                        item["table_data"] = json.loads(table_json)
+                    except Exception:
+                        pass
+
+                # Equation LaTeX
+                if meta.get("latex_source"):
+                    item["latex_source"] = meta["latex_source"]
+
+                visuals.append(item)
+
+        # Sort by page number, then by element type
+        type_order = {"figure": 0, "table": 1, "equation": 2}
+        visuals.sort(key=lambda v: (v["page_number"], type_order.get(v["element_type"], 3)))
+
+        return {"source_file": source_file, "count": len(visuals), "visuals": visuals}
+
+    except Exception as e:
+        logger.error(f"Failed to fetch visuals for {source_file}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Core RAG features
 # ---------------------------------------------------------------------------
@@ -420,6 +505,169 @@ async def explain_concept(request: ExplainRequest):
         )
     except Exception as e:
         logger.error(f"Explain failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExplainVisualRequest(BaseModel):
+    chunk_id: str
+    user_question: str | None = None  # optional follow-up question
+
+
+@router.post("/explain-visual")
+async def explain_visual(request: ExplainVisualRequest):
+    """
+    Explain a specific visual (figure, table, equation) using Gemini Vision.
+
+    Unlike /explain (which is text-only via Groq), this endpoint:
+    - Loads the actual image file from disk
+    - Sends it to Gemini Vision for true visual analysis
+    - Combines that with surrounding text from the paper
+    - Returns a detailed structured explanation
+    """
+    import os
+    from src.ingestion.vision_analyzer import VisionAnalyzer
+
+    if not request.chunk_id.strip():
+        raise HTTPException(status_code=400, detail="chunk_id is required")
+
+    try:
+        vs = get_rag_pipeline().retriever.vector_store
+
+        # 1. Fetch the chunk's metadata
+        result = vs.collection.get(
+            ids=[request.chunk_id],
+            include=["documents", "metadatas"],
+        )
+        if not result or not result["ids"]:
+            raise HTTPException(status_code=404, detail="Visual not found")
+
+        meta = result["metadatas"][0] or {}
+        element_type = meta.get("element_type", "figure")
+        source_file = meta.get("source_file", "")
+        page_number = meta.get("page_number", 0)
+        image_path = meta.get("image_path", "")
+        latex_source = meta.get("latex_source", "")
+        original_description = meta.get("image_description", "")
+
+        # 2. Retrieve nearby text context from the paper
+        # Get a few chunks from the same page for grounding
+        context_chunks = []
+        try:
+            all_results = vs.collection.get(
+                where={"source_file": source_file},
+                include=["documents", "metadatas"],
+            )
+            for i, doc in enumerate(all_results["documents"] or []):
+                m = all_results["metadatas"][i] or {}
+                if m.get("element_type") == "paragraph" and abs(m.get("page_number", 0) - page_number) <= 1:
+                    context_chunks.append(doc[:600])
+                if len(context_chunks) >= 5:
+                    break
+        except Exception as ce:
+            logger.warning(f"Could not gather context chunks: {ce}")
+
+        context_text = "\n\n".join(context_chunks) if context_chunks else "(no surrounding text available)"
+
+        # 3. Build a tailored prompt based on visual type
+        if element_type == "figure":
+            base_prompt = (
+                "You are analyzing a figure from a research paper. Provide a CLEAR, STRUCTURED explanation:\n\n"
+                "1. **What it shows** — describe what the figure depicts (chart, diagram, flowchart, photo, plot, etc.)\n"
+                "2. **Components & Labels** — identify every key element, label, axis, legend, arrow, box, or annotation\n"
+                "3. **If it's a flowchart/diagram**: walk through the flow step by step, explaining each node and connection\n"
+                "4. **If it's a graph/chart**: explain the axes, data points, trends, comparisons\n"
+                "5. **Key insight** — what is the figure trying to communicate? What's the main takeaway?\n"
+                "6. **Connection to paper** — how does this figure relate to the surrounding research?\n\n"
+                "Be specific. Reference actual labels, numbers, and visual elements you can see. "
+                "Use markdown formatting with headings and bullet points for clarity."
+            )
+        elif element_type == "table":
+            base_prompt = (
+                "You are analyzing a table from a research paper. Provide a CLEAR explanation:\n\n"
+                "1. **What it shows** — the table's purpose\n"
+                "2. **Columns & rows** — explain each column header and what the rows represent\n"
+                "3. **Key data points** — highlight notable values, comparisons, or patterns\n"
+                "4. **Best/worst performers** — if it's a benchmark, identify winners and losers\n"
+                "5. **Key takeaway** — what conclusion does this table support?\n\n"
+                "Reference specific numbers and column names. Use markdown formatting."
+            )
+        else:  # equation
+            base_prompt = (
+                "You are analyzing an equation from a research paper. Provide a CLEAR explanation:\n\n"
+                "1. **What it computes** — the equation's purpose in plain English\n"
+                "2. **Variable-by-variable breakdown** — define every symbol\n"
+                "3. **How to read it** — walk through the math step by step\n"
+                "4. **When it's used** — context within the research methodology\n"
+                "5. **Significance** — why this equation matters\n\n"
+                "Use markdown formatting with bullet points."
+            )
+
+        # Append paper context + user question if provided
+        full_prompt = base_prompt + f"\n\n**Surrounding text from the paper (page {page_number}):**\n{context_text}\n"
+        if original_description:
+            full_prompt += f"\n**Original auto-generated description:**\n{original_description}\n"
+        if request.user_question and request.user_question.strip():
+            full_prompt += f"\n**Specific question from the user:** {request.user_question}\n"
+
+        # 4. Send image to Groq's Llama 4 Vision (no more Gemini rate limits!)
+        from src.generation.llm_client import LLMClient
+        llm = LLMClient()
+        explanation = ""
+
+        if image_path and os.path.exists(image_path):
+            if llm.enabled:
+                try:
+                    explanation = llm.generate_with_image(
+                        prompt=full_prompt,
+                        image_path=image_path,
+                        temperature=0.3,
+                        max_tokens=2000,
+                    )
+                except Exception as ve:
+                    logger.error(f"Groq vision failed, falling back to Gemini: {ve}")
+                    # Fallback to Gemini Vision
+                    analyzer = VisionAnalyzer()
+                    if analyzer.enabled:
+                        explanation = analyzer.analyze(image_path, prompt=full_prompt)
+                    else:
+                        explanation = f"Vision analysis failed: {ve}"
+            else:
+                explanation = "Groq API key not set. Cannot analyze image."
+        elif latex_source:
+            # No image — use text-only Groq for equations
+            explanation = llm.generate(
+                full_prompt + f"\n\n**LaTeX source:** {latex_source}",
+                temperature=0.2,
+                max_tokens=1500,
+            )
+        else:
+            explanation = "No image or LaTeX source available to analyze."
+
+        # 5. Build citation referring to this visual
+        citation = {
+            "source_file": source_file,
+            "page_number": page_number,
+            "section": meta.get("section_heading", ""),
+            "relevance_score": 1.0,
+            "element_type": element_type,
+        }
+        if image_path and os.path.exists(image_path):
+            citation["image_url"] = f"/images/{os.path.basename(image_path)}"
+        if original_description:
+            citation["image_description"] = original_description
+
+        return {
+            "answer": explanation,
+            "citations": [citation],
+            "query": f"Explain {element_type} on page {page_number}",
+            "intent": "explain_visual",
+            "chunks_used": 1 + len(context_chunks),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Explain visual failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

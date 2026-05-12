@@ -217,6 +217,49 @@ export async function summarize(
   );
 }
 
+// ---------------- Document Visuals ----------------
+
+export interface VisualItem {
+  id: string;
+  element_type: "figure" | "table" | "equation";
+  page_number: number;
+  section_heading?: string;
+  content: string;
+  image_url?: string;
+  image_description?: string;
+  // table_data shape varies — sometimes { cols: string[], rows: string[][], raw: string },
+  // other times { cols: number, rows: number, raw: unknown[][] }. Keep it permissive.
+  table_data?: Record<string, unknown>;
+  latex_source?: string;
+}
+
+export interface DocumentVisualsResponse {
+  source_file: string;
+  count: number;
+  visuals: VisualItem[];
+}
+
+export async function listDocumentVisuals(
+  sourceFile: string,
+): Promise<DocumentVisualsResponse> {
+  return request<DocumentVisualsResponse>(
+    `/documents/${encodeURIComponent(sourceFile)}/visuals`,
+    { method: "GET" },
+    30_000,
+  );
+}
+
+export async function explainVisual(payload: {
+  chunk_id: string;
+  user_question?: string;
+}): Promise<QueryResponse> {
+  return request<QueryResponse>(
+    "/explain-visual",
+    { method: "POST", body: JSON.stringify(payload) },
+    120_000,
+  );
+}
+
 // ---------------- Humanizer ----------------
 
 export async function detectAI(
