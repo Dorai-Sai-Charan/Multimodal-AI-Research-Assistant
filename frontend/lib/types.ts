@@ -84,3 +84,24 @@ export interface ChatMessage {
   mode?: "rag" | "agent" | "multi-doc";
   error?: boolean;
 }
+
+export interface AIDetectionResponse {
+  ai_percentage: number;
+  confidence: number;
+  explanation: string;
+  metrics?: Record<string, number>;
+  heuristic_score?: number;
+  roberta_score?: number;
+}
+
+export interface HumanizationResponse {
+  original_text: string;
+  humanized_text: string;
+  changes_made: string;
+  original_score?: number;
+  new_score?: number;
+  metrics_before?: Record<string, number>;
+  metrics_after?: Record<string, number>;
+  passes_used?: number;
+  target_reached?: boolean;
+}

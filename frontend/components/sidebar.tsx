@@ -9,6 +9,7 @@ import {
   Search,
   TrendingUp,
   Microscope,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ModelSettings } from "./model-settings";
@@ -47,6 +48,12 @@ const NAV = [
     label: "Trends & Recommend",
     icon: TrendingUp,
     hint: "Analytics + suggestions",
+  },
+  {
+    href: "/humanizer",
+    label: "Text Humanizer",
+    icon: Sparkles,
+    hint: "AI detection & humanization",
   },
 ];
 

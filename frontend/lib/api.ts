@@ -7,7 +7,9 @@
 
 import type {
   AgentQueryResponse,
+  AIDetectionResponse,
   DocumentInfo,
+  HumanizationResponse,
   LLMConfig,
   ModelCatalogue,
   QueryResponse,
@@ -210,6 +212,28 @@ export async function summarize(
 ): Promise<QueryResponse> {
   return request<QueryResponse>(
     "/summarize",
+    { method: "POST", body: JSON.stringify(payload) },
+    180_000,
+  );
+}
+
+// ---------------- Humanizer ----------------
+
+export async function detectAI(
+  payload: { text: string },
+): Promise<AIDetectionResponse> {
+  return request<AIDetectionResponse>(
+    "/detect-ai",
+    { method: "POST", body: JSON.stringify(payload) },
+    60_000,
+  );
+}
+
+export async function humanizeText(
+  payload: { text: string },
+): Promise<HumanizationResponse> {
+  return request<HumanizationResponse>(
+    "/humanize",
     { method: "POST", body: JSON.stringify(payload) },
     180_000,
   );
