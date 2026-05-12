@@ -18,6 +18,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs } from "@/components/ui/tabs";
 import { InfoTip } from "@/components/ui/info-tip";
 import { ExamplePrompts, type ExamplePrompt } from "@/components/example-prompts";
+import { VisualCitations } from "@/components/visual-citations";
 import { useDocumentsPolling, useTunablePayload, useAsync } from "@/lib/hooks";
 import { explainConcept, query } from "@/lib/api";
 
@@ -224,7 +225,12 @@ function ExplainTab() {
           </span>
         }
       >
-        {data && <ResultView data={data} modeLabel="Explain" />}
+        {data && (
+          <>
+            <VisualCitations citations={data.citations ?? []} />
+            <ResultView data={data} modeLabel="Explain" />
+          </>
+        )}
       </ResultCard>
     </>
   );

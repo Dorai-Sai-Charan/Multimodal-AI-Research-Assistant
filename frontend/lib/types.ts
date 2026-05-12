@@ -16,6 +16,12 @@ export interface Citation {
   page_number: number;
   section?: string;
   relevance_score: number;
+  element_type?: "paragraph" | "figure" | "table" | "equation" | "handwritten";
+  content_type?: "text" | "table" | "equation" | "figure" | "handwritten";
+  image_url?: string;
+  image_description?: string;
+  table_data?: { cols?: string[]; rows?: string[][]; raw?: string };
+  latex_source?: string;
   [k: string]: unknown;
 }
 

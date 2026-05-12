@@ -3,6 +3,7 @@ Semantic retriever.
 Handles the retrieval pipeline: query → embed → search → rank → return.
 """
 
+import os
 import logging
 from src.storage.embedding_service import EmbeddingService
 from src.storage.vector_store import VectorStore
@@ -104,20 +105,44 @@ class Retriever:
         return "\n---\n".join(context_parts)
 
     def get_citations(self, results: list[QueryResult]) -> list[dict]:
-        """Extract structured citations from retrieval results."""
+        """Extract structured citations including visual metadata (images, tables, equations)."""
         citations = []
         seen = set()
 
         for result in results:
             chunk = result.chunk
-            key = (chunk.metadata.source_file, chunk.metadata.page_number)
-            if key not in seen:
-                seen.add(key)
-                citations.append({
-                    "source_file": chunk.metadata.source_file,
-                    "page_number": chunk.metadata.page_number,
-                    "section": chunk.metadata.section_heading,
-                    "relevance_score": round(result.score, 3),
-                })
+            meta = chunk.metadata
+            is_visual = meta.element_type in ("figure", "table", "equation")
+
+            # Visual elements each get their own citation entry; text deduplicates by page
+            dedup_key = (
+                meta.source_file,
+                meta.page_number,
+                meta.element_type if is_visual else "text",
+                os.path.basename(meta.image_path) if meta.image_path else "",
+            )
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            citation: dict = {
+                "source_file": meta.source_file,
+                "page_number": meta.page_number,
+                "section": meta.section_heading,
+                "relevance_score": round(result.score, 3),
+                "element_type": meta.element_type,
+                "content_type": chunk.content_type,
+            }
+
+            if meta.image_path and os.path.exists(meta.image_path):
+                citation["image_url"] = f"/images/{os.path.basename(meta.image_path)}"
+            if meta.image_description:
+                citation["image_description"] = meta.image_description
+            if meta.table_data:
+                citation["table_data"] = meta.table_data
+            if meta.latex_source:
+                citation["latex_source"] = meta.latex_source
+
+            citations.append(citation)
 
         return citations
