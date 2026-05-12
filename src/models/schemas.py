@@ -149,6 +149,9 @@ class AIDetectionResponse(BaseModel):
     ai_percentage: float  # 0-100
     confidence: float  # 0-1
     explanation: str
+    metrics: Optional[dict] = None
+    heuristic_score: Optional[float] = None
+    roberta_score: Optional[float] = None
 
 
 class HumanizationResponse(BaseModel):
@@ -156,3 +159,9 @@ class HumanizationResponse(BaseModel):
     original_text: str
     humanized_text: str
     changes_made: str
+    original_score: Optional[float] = None
+    new_score: Optional[float] = None
+    metrics_before: Optional[dict] = None
+    metrics_after: Optional[dict] = None
+    passes_used: Optional[int] = None
+    target_reached: Optional[bool] = None
