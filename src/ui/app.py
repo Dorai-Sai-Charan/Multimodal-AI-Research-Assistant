@@ -432,12 +432,13 @@ with st.sidebar:
 
 st.title("Multimodal AI Research Assistant")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Chat Assistant",
     "Compare Papers",
     "Survey & Gaps",
     "Search & Explain",
     "Trends & Recommend",
+    "✨ Humanizer",
 ])
 
 
@@ -786,3 +787,145 @@ with tab5:
                 st.markdown(data["answer"])
                 render_citations(data.get("citations", []))
                 st.caption(f"Chunks used: {data['chunks_used']}")
+
+
+# ===========================================================================
+# TAB 6 — Humanizer
+# Covers: AI-generated content detection, text humanization
+# ===========================================================================
+
+with tab6:
+    st.markdown("#### ✨ Research Text Analyzer & Humanizer")
+    st.caption(
+        "Detect AI content and humanize it for IEEE academic papers. "
+        "Uses computable metrics (burstiness, lexical diversity) + RoBERTa detection."
+    )
+
+    # Input area
+    user_text = st.text_area(
+        "Paste your text",
+        placeholder="Paste AI-generated or formal academic text here...",
+        height=200,
+        label_visibility="collapsed",
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        detect_btn = st.button("🔍 Detect AI", use_container_width=True, key="hum_detect")
+
+    with col2:
+        humanize_btn = st.button("✨ Humanize", use_container_width=True, key="hum_humanize")
+
+    # ---- DETECTION ----
+    if detect_btn and user_text.strip():
+        with st.spinner("Analysing text metrics + RoBERTa detection…"):
+            data, err = api_post("detect-ai", {"text": user_text})
+
+        if err:
+            st.error(err)
+        else:
+            # Score display with color
+            score = data["ai_percentage"]
+            if score <= 30:
+                verdict = "🟢 Likely Human"
+            elif score <= 60:
+                verdict = "🟡 Mixed / Uncertain"
+            else:
+                verdict = "🔴 Likely AI-Generated"
+
+            # Top-level metrics
+            mcol1, mcol2, mcol3 = st.columns(3)
+            with mcol1:
+                st.metric("Blended AI Score", f"{score:.0f}%", verdict)
+            with mcol2:
+                if data.get("heuristic_score") is not None:
+                    st.metric("Heuristic", f"{data['heuristic_score']:.0f}%", "Computable metrics")
+            with mcol3:
+                if data.get("roberta_score") is not None:
+                    st.metric("RoBERTa Model", f"{data['roberta_score']:.0f}%", "ML detector")
+
+            # Detailed metrics in cards
+            if data.get("metrics"):
+                m = data["metrics"]
+                st.markdown("##### 📊 Text Metrics")
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1:
+                    burstiness_label = "Human-like" if m["burstiness"] >= 0.5 else "Too uniform" if m["burstiness"] < 0.3 else "Moderate"
+                    st.metric("Burstiness", m["burstiness"], burstiness_label)
+                with mc2:
+                    sent_label = "AI sweet spot" if 19 <= m["avg_sent_len"] <= 26 else "Outside AI range"
+                    st.metric("Avg Sent Len", f"{m['avg_sent_len']}w", sent_label)
+                with mc3:
+                    ttr_label = "Rich" if m["ttr"] >= 0.6 else "Repetitive" if m["ttr"] < 0.45 else "Moderate"
+                    st.metric("Lexical Diversity", m["ttr"], ttr_label)
+
+            # Full explanation
+            with st.expander("📋 Detailed Analysis"):
+                st.markdown(data["explanation"])
+
+    # ---- HUMANIZATION ----
+    if humanize_btn and user_text.strip():
+        with st.spinner("Iteratively humanizing text (target <20% AI)…"):
+            data, err = api_post("humanize", {"text": user_text}, timeout=120)
+
+        if err:
+            st.error(err)
+        else:
+            # Safely extract scores with fallback
+            orig_score = data.get("original_score")
+            new_score = data.get("new_score")
+            passes = data.get("passes_used", 1)
+
+            # Target reached banner (only show if we have scores)
+            if orig_score is not None and new_score is not None:
+                if data.get("target_reached"):
+                    st.success(
+                        f"🎯 **Target reached!** AI score: **{orig_score:.0f}% → {new_score:.0f}%** "
+                        f"in {passes} pass{'es' if passes > 1 else ''}"
+                    )
+                else:
+                    st.warning(
+                        f"⚠ **Best result:** AI score: **{orig_score:.0f}% → {new_score:.0f}%** "
+                        f"(after {passes} passes, target was <20%)"
+                    )
+            else:
+                st.info("Text humanized. Score metrics unavailable.")
+
+            # Humanized text
+            st.markdown("### 📝 Humanized Version")
+            st.markdown(
+                f'<div style="background:#1e1e2e;padding:16px;border-radius:8px;border-left:4px solid #764ba2;line-height:1.7;color:#e0e0e0;">{data["humanized_text"]}</div>',
+                unsafe_allow_html=True
+            )
+
+            # Before/After metrics comparison (safe)
+            before = data.get("metrics_before")
+            after = data.get("metrics_after")
+            if before and after:
+                st.markdown("##### 📊 Before vs After")
+                cmp_col1, cmp_col2 = st.columns(2)
+                with cmp_col1:
+                    st.markdown("**BEFORE**")
+                    st.metric("Burstiness", before.get("burstiness", 0))
+                    st.metric("Lexical Diversity", before.get("ttr", 0))
+                    st.metric("Human Markers", before.get("human_markers", 0))
+                with cmp_col2:
+                    st.markdown("**AFTER**")
+                    b_burst = before.get("burstiness", 0)
+                    a_burst = after.get("burstiness", 0)
+                    b_ttr = before.get("ttr", 0)
+                    a_ttr = after.get("ttr", 0)
+                    b_hm = before.get("human_markers", 0)
+                    a_hm = after.get("human_markers", 0)
+                    st.metric("Burstiness", a_burst, f"{(a_burst - b_burst):+.2f}")
+                    st.metric("Lexical Diversity", a_ttr, f"{(a_ttr - b_ttr):+.2f}")
+                    st.metric("Human Markers", a_hm, f"{a_hm - b_hm:+d}")
+
+            # Changes detail
+            with st.expander("📋 Changes Made"):
+                st.markdown(data["changes_made"])
+
+            # Copy-friendly text
+            st.markdown("**Copy humanized text:**")
+            st.code(data["humanized_text"], language="text")

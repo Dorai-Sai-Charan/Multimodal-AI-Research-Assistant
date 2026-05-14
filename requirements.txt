@@ -7,6 +7,7 @@ pydantic-settings==2.7.1
 
 # LLM
 google-genai>=1.68.0
+groq>=0.11.0
 
 # Embeddings
 sentence-transformers==3.3.1
