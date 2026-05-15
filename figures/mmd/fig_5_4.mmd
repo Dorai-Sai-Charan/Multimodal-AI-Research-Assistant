@@ -1,0 +1,33 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F','primaryTextColor': '#FFFFFF','primaryBorderColor': '#0D2137','lineColor': '#4A90D9','fontFamily': 'Arial, sans-serif','fontSize': '17px'}}}%%
+flowchart TD
+    Q(["🔍  User Query"])
+    EMB["📐  EmbeddingService\nall-MiniLM-L6-v2  ·  384-dim normalised"]
+
+    subgraph FILT["  Optional Metadata Filters  "]
+        direction LR
+        SF["source_file = X"]
+        ET["element_type =\ntext / table / figure / eq"]
+        BR["No filter —\nAll documents"]
+    end
+
+    CHROMA[("🗄️  ChromaDB\nHNSW cosine search  ·  top_k nearest")]
+    DIST["Distance → Similarity\n1.0  −  ( dist ÷ 2.0 )"]
+    THRESH{"similarity  ≥  0.3 ?"}
+    KEEP["✅  Include in results"]
+    DROP["❌  Discard"]
+    RANK["Rank by decreasing similarity"]
+    CITE["Build context string\nwith inline source citations"]
+    OUT(["📋  QueryResult list\nchunk  ·  score  ·  rank"])
+
+    Q --> EMB --> FILT
+    SF & ET & BR --> CHROMA --> DIST --> THRESH
+    THRESH -->|"Yes"| KEEP --> RANK --> CITE --> OUT
+    THRESH -->|"No"| DROP
+
+    style Q fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style OUT fill:#27AE60,color:#fff,stroke:#1A7A42
+    style CHROMA fill:#8E44AD,color:#fff,stroke:#6C3483
+    style EMB fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style KEEP fill:#27AE60,color:#fff,stroke:#1A7A42
+    style DROP fill:#C0392B,color:#fff,stroke:#922B21
+    style THRESH fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

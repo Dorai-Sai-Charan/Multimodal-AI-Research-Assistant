@@ -69,6 +69,25 @@ def heading_side(text, level=1):
 def body(text, space_after=6):
     return para(text, size=12, space_after=space_after)
 
+def bullet_item(text, bold_prefix=None):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf = p.paragraph_format
+    pf.space_before = Pt(2)
+    pf.space_after = Pt(4)
+    pf.left_indent = Inches(0.5)
+    pf.first_line_indent = Inches(-0.25)
+    pf.line_spacing = Pt(20)
+    if bold_prefix:
+        r1 = p.add_run("\u2022  " + bold_prefix)
+        set_font(r1, 12, bold=True)
+        r2 = p.add_run(text)
+        set_font(r2, 12)
+    else:
+        run = p.add_run("\u2022  " + text)
+        set_font(run, 12)
+    return p
+
 def add_page_break():
     doc.add_page_break()
 
@@ -113,28 +132,48 @@ def add_table(headers, rows, caption=""):
 
 FIGURES_DIR = "/home/nst-kaja/Documents/Dorai/Multimodal-AI-Research-Assistant/figures"
 
+# Usable page width and max display height (inches) within margins
+_MAX_W_IN = 5.5
+_MAX_H_IN = 5.8
+
 def add_figure(fig_num, caption, img_filename=None):
-    """Insert a real image if available, otherwise a labelled placeholder box."""
+    """Insert image sized to fit the page, or a placeholder if not available."""
     import os
+    from PIL import Image as _PILImage
     img_path = os.path.join(FIGURES_DIR, img_filename) if img_filename else None
+
     if img_path and os.path.exists(img_path):
-        # Centring paragraph then insert picture
+        # --- smart sizing based on actual pixel dimensions ---
+        pil_img = _PILImage.open(img_path)
+        px_w, px_h = pil_img.size
+        ratio = px_w / px_h          # width-to-height ratio
+
+        # Start from max allowed width
+        display_w_in = _MAX_W_IN
+        display_h_in = display_w_in / ratio
+
+        # If resulting height exceeds max, scale down from height side
+        if display_h_in > _MAX_H_IN:
+            display_h_in = _MAX_H_IN
+            display_w_in = display_h_in * ratio
+
+        # Minimum width = 2.5" so very narrow images still look presentable
+        display_w_in = max(display_w_in, 2.5)
+
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(8)
         p.paragraph_format.space_after  = Pt(2)
         run = p.add_run()
-        run.add_picture(img_path, width=Inches(5.8))
+        run.add_picture(img_path, width=Inches(round(display_w_in, 3)))
     else:
-        # Placeholder box for images not yet available
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        pf = p.paragraph_format
-        pf.space_before = Pt(6)
-        pf.space_after  = Pt(2)
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after  = Pt(2)
         r = p.add_run(f"[ Figure {fig_num} — insert image here ]")
         set_font(r, 11, italic=True, color=(120, 120, 120))
-    # Caption always added below
+
     cap = doc.add_paragraph()
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r2 = cap.add_run(f"Fig. {fig_num}  {caption}")
@@ -153,15 +192,20 @@ for _ in range(4):
 
 p = doc.add_paragraph()
 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-run = p.add_run("Multimodal AI Research Assistant")
-set_font(run, 18, bold=True)
+run = p.add_run("A Modular Multimodal Retrieval-Augmented Agentic Framework for "
+                "Intelligent Scientific Document Understanding")
+set_font(run, 16, bold=True)
 
 para("A PROJECT REPORT", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=12)
 para("Submitted by", size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
+para("Team No: 22AIE091", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=4)
 
-for sid, name in [("BL.EN.U4CSE22-001", "Dorai Sai Charan"),
-                  ("BL.EN.U4CSE22-002", "Team Member 2"),
-                  ("BL.EN.U4CSE22-003", "Team Member 3")]:
+for sid, name in [
+    ("BL.EN.U4AIE22030", "Dorai Sai Charan"),
+    ("BL.EN.U4AIE22022", "K. Nithin"),
+    ("BL.EN.U4AIE22017", "Vijay"),
+    ("BL.EN.U4AIE22076", "Dinesh"),
+]:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r1 = p.add_run(f"{sid}\t{name}")
@@ -171,7 +215,7 @@ para("in partial fulfillment for the award of the degree of",
      size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
 para("BACHELOR OF TECHNOLOGY", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 para("IN", size=12, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("COMPUTER SCIENCE AND ENGINEERING", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+para("ARTIFICIAL INTELLIGENCE AND DATA SCIENCE", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 
 for _ in range(2):
     doc.add_paragraph()
@@ -189,18 +233,22 @@ heading_main("AMRITA VISHWA VIDYAPEETHAM\nAMRITA SCHOOL OF COMPUTING, BENGALURU,
 para("", space_after=12)
 heading_main("BONAFIDE CERTIFICATE")
 
-body('This is to certify that the project report entitled "Multimodal AI Research Assistant" submitted by')
+body('This is to certify that the project report entitled "A Modular Multimodal Retrieval-Augmented '
+     'Agentic Framework for Intelligent Scientific Document Understanding" submitted by')
 para("", space_after=4)
-for sid, name in [("BL.EN.U4CSE22-001", "Dorai Sai Charan"),
-                  ("BL.EN.U4CSE22-002", "Team Member 2"),
-                  ("BL.EN.U4CSE22-003", "Team Member 3")]:
+for sid, name in [
+    ("BL.EN.U4AIE22030", "Dorai Sai Charan"),
+    ("BL.EN.U4AIE22022", "K. Nithin"),
+    ("BL.EN.U4AIE22017", "Vijay"),
+    ("BL.EN.U4AIE22076", "Dinesh"),
+]:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r1 = p.add_run(f"{sid}\t{name}")
     set_font(r1, 12)
 
 body('in partial fulfillment of the requirements as part of Bachelor of Technology in '
-     '"COMPUTER SCIENCE AND ENGINEERING" is a bonafide record of the work carried out '
+     '"ARTIFICIAL INTELLIGENCE AND DATA SCIENCE" is a bonafide record of the work carried out '
      'under our guidance and supervision at Amrita School of Computing, Bengaluru.')
 para("", space_after=24)
 
@@ -260,7 +308,7 @@ body("We would like to express our gratitude to the project panel members for th
 para("", space_after=24)
 p = doc.add_paragraph()
 p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-run = p.add_run("Dorai Sai Charan\nTeam Member 2\nTeam Member 3")
+run = p.add_run("Dorai Sai Charan\nK. Nithin\nVijay\nDinesh")
 set_font(run, 12)
 
 # Roman numeral page marker
@@ -275,39 +323,37 @@ set_font(r2, 12, italic=True)
 add_page_break()
 heading_main("ABSTRACT")
 
-body("The exponential growth of scientific literature has created an urgent need for intelligent "
-     "systems capable of extracting, reasoning, and synthesising knowledge from complex, "
-     "multimodal research documents. This project presents a Multimodal AI Research Assistant — "
-     "a full-stack, end-to-end intelligent research companion that integrates Retrieval-Augmented "
-     "Generation (RAG), Agentic Reasoning via the ReAct (Reason + Act) pattern, and a novel "
-     "AI-Detection and Text Humanization Engine into a single cohesive platform.")
+body("Scientific output is growing at an unprecedented pace — more than two million peer-reviewed "
+     "papers every year, with no sign of slowing down. Keeping up with all of it manually simply "
+     "isn't feasible anymore. This project builds a Multimodal AI Research Assistant that tackles "
+     "this challenge head-on: a full-stack research companion that brings together Retrieval-"
+     "Augmented Generation (RAG), agentic multi-step reasoning via the ReAct (Reason + Act) "
+     "pattern, and an AI-Detection and Humanization Engine — all in one integrated platform.")
 
-body("The system accepts PDF research papers as input and applies a six-stage multimodal ingestion "
-     "pipeline that separately processes textual content via PyMuPDF, tabular data via pdfplumber, "
-     "embedded figures via image extraction, handwritten or scanned text via EasyOCR, visual "
-     "diagrams and charts via Gemini 2.0 Flash Vision, and mathematical equations via LaTeX "
-     "conversion. Extracted content is semantically chunked using LangChain's Recursive Character "
-     "Text Splitter (chunk size 512 characters, overlap 50 characters) and embedded into a "
-     "384-dimensional vector space using the all-MiniLM-L6-v2 Sentence-Transformer model. "
-     "Embeddings are persisted in ChromaDB using an HNSW cosine-similarity index.")
+body("Feed in a PDF and the system runs a six-stage ingestion pipeline that doesn't treat the "
+     "document as plain text. It separates out tables (pdfplumber), figures (Gemini 2.0 Flash "
+     "Vision), scanned or handwritten regions (EasyOCR), and LaTeX equations before chunking them "
+     "individually. Text is split into 512-character chunks with 50-character overlap; tables, "
+     "figures, and equations stay as single atomic units — splitting them would destroy their "
+     "meaning. Everything ends up as a 384-dimensional embedding from all-MiniLM-L6-v2, persisted "
+     "in ChromaDB with an HNSW cosine-similarity index for fast approximate nearest-neighbour "
+     "retrieval.")
 
-body("For knowledge retrieval and generation, the system implements nine specialised RAG pipeline "
-     "methods — including single-shot question answering, paper summarisation, paper comparison, "
-     "literature survey generation, research gap identification, and cross-paper multi-document "
-     "reasoning — each with tailored retrieval strategies and prompt templates. A ReAct-based "
-     "Research Agent orchestrates multi-hop reasoning through up to ten iterative Thought–Action–"
-     "Observation cycles, dynamically invoking typed retrieval tools (text, table, figure, and "
-     "equation search) for complex queries. Text generation is powered by Groq's Llama 3.3 70B "
-     "model for high-throughput inference.")
+body("On the query side, nine specialised RAG pipeline methods cover everything from quick "
+     "single-shot QA to full literature survey generation — each tuned with its own retrieval "
+     "strategy and prompt template. The most powerful capability is the ReAct agent, which "
+     "handles questions that can't be answered in one shot by running up to ten Thought–Action–"
+     "Observation cycles, calling typed retrieval tools (text, table, figure, or equation "
+     "search) as needed. All generation runs through Groq's Llama 3.3 70B for the throughput "
+     "a real-time research tool actually demands.")
 
-body("A unique Humanizer Engine combines a RoBERTa-based AI content detector with heuristic "
-     "linguistic metrics (burstiness, Type-Token Ratio, human marker density) to score and "
-     "iteratively refine generated text until its AI-detection score falls below 20%, ensuring "
-     "academic authenticity. The modern Next.js 15 frontend with React 19 renders rich Markdown, "
-     "KaTeX mathematical notation, syntax-highlighted code, and inline figures. Experimental "
-     "evaluation demonstrates strong retrieval precision, contextually faithful answers with "
-     "full citation traceability, and effective humanization, making this system a comprehensive "
-     "tool for researchers and graduate students.")
+body("The Humanizer Engine blends a RoBERTa-based AI detector with heuristic linguistic "
+     "metrics — burstiness (sigma/mu of sentence lengths), Type-Token Ratio, and human marker "
+     "density — to iteratively rewrite generated text until its AI score drops below 20%. The "
+     "frontend, built on Next.js 15 with React 19, renders Markdown, KaTeX maths, and "
+     "syntax-highlighted code. End-to-end evaluation shows strong retrieval precision, "
+     "faithful answers with traceable citations, and effective humanization — a practical "
+     "research toolkit for graduate students and academics alike.")
 
 p_rom = doc.add_paragraph()
 p_rom.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -491,39 +537,34 @@ add_page_break()
 heading_main("CHAPTER – 1\nINTRODUCTION")
 
 heading_side("1.1  Background and Context")
-body("The scientific community produces more than two million peer-reviewed publications annually, "
-     "a figure that doubles roughly every nine years. For researchers, engineers, and graduate "
-     "students, manually reading, comprehending, and synthesising relevant knowledge from this "
-     "ocean of literature has become an increasingly untenable task. Traditional keyword-based "
-     "search engines and bibliographic databases such as Google Scholar, PubMed, and Semantic "
-     "Scholar address document discovery but offer no mechanism for deep comprehension, comparative "
-     "analysis, or synthesis across papers.")
+body("The scientific community now produces more than two million peer-reviewed papers every year "
+     "— a number that roughly doubles every nine years. For any researcher trying to keep up with "
+     "their field, let alone survey an unfamiliar one, manually reading and synthesising this "
+     "volume of work has become genuinely untenable. Search engines like Google Scholar and "
+     "Semantic Scholar help with discovery, but they can't help you understand papers, compare "
+     "them, or draw cross-paper insights.")
 
-body("The advent of Large Language Models (LLMs) such as GPT-4, Llama 3, and Gemini has opened "
-     "a new paradigm: conversational access to knowledge encoded in text. However, general-purpose "
-     "LLMs suffer from well-documented limitations when applied to domain-specific scientific "
-     "literature. First, they are constrained by a fixed context window that cannot accommodate "
-     "the full content of even a single long research paper, let alone a collection. Second, they "
-     "lack access to documents published after their training cutoff, creating a temporal blind "
-     "spot. Third — and most critically — they hallucinate: they fabricate plausible-sounding but "
-     "factually incorrect claims, a behaviour that is particularly hazardous in scientific contexts "
-     "where precision is paramount.")
+body("Large Language Models — GPT-4, Llama 3, Gemini — opened the door to a new mode of "
+     "interacting with knowledge: ask a question in plain language and get a coherent answer. "
+     "But general-purpose LLMs have three deep limitations for research use. Their context "
+     "windows can't accommodate a full-length paper, let alone a collection. They don't know "
+     "about anything published after their training cutoff. And they hallucinate — confidently "
+     "stating plausible-sounding but incorrect facts — which is a serious hazard in any "
+     "scientific context where precision matters.")
 
-body("Retrieval-Augmented Generation (RAG) was introduced as a principled solution to these "
-     "limitations. By dynamically fetching relevant passages from an external knowledge store "
-     "and injecting them into the LLM's context window, RAG grounds the model's responses in "
-     "verifiable evidence, dramatically reducing hallucination and enabling access to arbitrary "
-     "external corpora. The seminal RAG paper by Lewis et al. (2020) demonstrated that "
-     "retrieval-augmented models outperform purely generative counterparts on knowledge-intensive "
-     "tasks by a substantial margin.")
+body("Retrieval-Augmented Generation (RAG) was developed as a principled fix. Rather than relying "
+     "on the model's parametric memory alone, RAG retrieves relevant passages from an external "
+     "knowledge store at query time and injects them into the context window. This grounds answers "
+     "in real, verifiable evidence — cutting hallucination significantly. Lewis et al. (2020) showed "
+     "retrieval-augmented models outperforming purely generative ones on knowledge-intensive tasks "
+     "by a wide margin, establishing RAG as the standard architecture for document-grounded QA.")
 
-body("Research documents, however, are inherently multimodal. A typical machine learning paper "
-     "contains not only narrative text but also data tables reporting experimental results, "
-     "architecture diagrams describing system components, performance graphs, and mathematical "
-     "equations formalising model behaviour. Standard RAG systems are text-only pipelines that "
-     "discard the rich information encoded in tables, figures, and equations when processing "
-     "research papers. This information gap motivates the construction of a truly multimodal "
-     "retrieval system.")
+body("The trouble is that research documents aren't just text. A typical ML paper contains tables "
+     "of benchmark results, architecture diagrams, performance graphs, and LaTeX-formatted "
+     "equations — and most of that information gets thrown away by text-only RAG pipelines. You "
+     "end up with a system that can answer questions about the prose sections but draws a blank "
+     "when you ask about the table on page 6 or the derivation in Section 3. Closing that gap "
+     "is the core motivation for building a genuinely multimodal retrieval system.")
 
 add_figure("1.1", "Conceptual overview of the Multimodal AI Research Assistant", "fig_1_1_overview.png")
 
@@ -531,22 +572,17 @@ heading_side("1.2  Problem Statement")
 body("Existing research assistance tools present several critical gaps that this project aims to "
      "address:")
 
-body("(i) Text-only RAG pipelines discard tables, figures, and equations — often the most "
-     "information-dense components of a research paper — resulting in incomplete and superficial "
-     "answers to quantitative or methodology-focused questions.")
-
-body("(ii) General-purpose conversational AI systems cannot reason across multiple uploaded "
-     "documents simultaneously, preventing comparative analysis or synthesis across a personal "
-     "literature collection.")
-
-body("(iii) Complex research questions requiring multi-step reasoning — such as 'How does the "
-     "attention mechanism described in Paper A compare to the sparse attention approach in Paper B, "
-     "and which achieves better performance on the GLUE benchmark?' — cannot be answered by a "
-     "single-shot RAG pipeline and require iterative, tool-augmented reasoning.")
-
-body("(iv) AI-generated research content, even when factually accurate, is often recognisable "
-     "as machine-produced due to its uniform sentence structure and lexical patterns, which may "
-     "not meet academic writing standards or pass institutional AI-detection checks.")
+bullet_item("Text-only RAG pipelines discard tables, figures, and equations — often the most "
+            "information-dense components of a research paper — leading to incomplete answers on "
+            "quantitative or methodology-focused questions.")
+bullet_item("General-purpose conversational AI can't reason across multiple uploaded documents at "
+            "once, making comparative analysis or cross-paper synthesis impossible.")
+bullet_item("Multi-hop research questions — e.g. comparing attention mechanisms across two papers "
+            "and checking GLUE benchmark figures — demand iterative, tool-augmented reasoning that "
+            "a single-shot RAG pipeline simply can't provide.")
+bullet_item("AI-generated content, even when factually accurate, is often recognisable as "
+            "machine-produced due to uniform sentence structure, which may not pass institutional "
+            "AI-detection checks.")
 
 heading_side("1.3  Motivation")
 body("The primary motivation for this project arises from the direct experience of graduate "
@@ -764,35 +800,34 @@ heading_main("CHAPTER – 3\nSYSTEM REQUIREMENTS AND ANALYSIS")
 
 heading_side("3.1  Functional Requirements")
 body("The system shall provide the following functional capabilities:")
-body("FR-01: The system shall accept PDF files of research papers as input through a web "
-     "interface and process them asynchronously without blocking the user interface.")
-body("FR-02: The system shall extract text content from PDFs, preserving section heading "
-     "structure and page number metadata.")
-body("FR-03: The system shall detect and extract tabular data from PDFs, converting tables "
-     "to structured Markdown format while preserving raw cell data.")
-body("FR-04: The system shall extract embedded images from PDF pages and save them to disk "
-     "with document-scoped unique identifiers.")
-body("FR-05: The system shall apply OCR processing to scanned or handwritten image content "
-     "using EasyOCR.")
-body("FR-06: The system shall generate natural language descriptions of figures, diagrams, "
-     "and charts using Gemini Vision API.")
-body("FR-07: The system shall detect and extract mathematical equations from images, "
-     "converting them to LaTeX notation using Gemini Vision.")
-body("FR-08: The system shall chunk extracted content into semantically meaningful units "
-     "and generate 384-dimensional vector embeddings using all-MiniLM-L6-v2.")
-body("FR-09: The system shall store chunk embeddings and metadata in a persistent ChromaDB "
-     "vector database with HNSW indexing.")
-body("FR-10: The system shall support at least nine distinct research task pipelines: "
-     "single-shot QA, summarisation, paper comparison, literature survey, gap identification, "
-     "concept explanation, visual explanation, paper recommendation, and trend analysis.")
-body("FR-11: The system shall implement a ReAct agent capable of multi-hop reasoning with "
-     "up to ten iterations and five distinct retrieval tools.")
-body("FR-12: The system shall detect the AI-probability of generated text and iteratively "
-     "humanize it until the score falls below 20%.")
-body("FR-13: The system shall return source citations (file, page, section, similarity score) "
-     "with every generated response.")
-body("FR-14: The system shall provide a REST API with at least fourteen endpoints for "
-     "all functionality.")
+bullet_item("Accept PDF research papers via a web interface and process them asynchronously "
+            "without blocking the UI.", bold_prefix="FR-01: ")
+bullet_item("Extract text from PDFs while preserving section heading structure and page numbers.",
+            bold_prefix="FR-02: ")
+bullet_item("Detect and extract tabular data, converting tables to Markdown while keeping raw "
+            "cell values in metadata.", bold_prefix="FR-03: ")
+bullet_item("Extract embedded images from PDF pages and save them with document-scoped unique IDs.",
+            bold_prefix="FR-04: ")
+bullet_item("Apply EasyOCR to scanned or handwritten image content.", bold_prefix="FR-05: ")
+bullet_item("Generate natural-language descriptions of figures and diagrams via Gemini Vision API.",
+            bold_prefix="FR-06: ")
+bullet_item("Detect and extract mathematical equations from images, converting them to LaTeX "
+            "using Gemini Vision.", bold_prefix="FR-07: ")
+bullet_item("Chunk extracted content into semantically meaningful units and generate 384-dim "
+            "embeddings using all-MiniLM-L6-v2.", bold_prefix="FR-08: ")
+bullet_item("Persist chunk embeddings and metadata in a ChromaDB vector database with HNSW indexing.",
+            bold_prefix="FR-09: ")
+bullet_item("Support nine distinct research task pipelines: QA, summarisation, comparison, "
+            "literature survey, gap identification, explanation, recommendation, and trend analysis.",
+            bold_prefix="FR-10: ")
+bullet_item("Implement a ReAct agent with up to ten reasoning iterations and five retrieval tools.",
+            bold_prefix="FR-11: ")
+bullet_item("Detect AI probability of generated text and iteratively rewrite until the score "
+            "drops below 20 percent.", bold_prefix="FR-12: ")
+bullet_item("Return source citations (file, page, section, similarity score) with every response.",
+            bold_prefix="FR-13: ")
+bullet_item("Expose a REST API with at least fourteen endpoints covering all functionality.",
+            bold_prefix="FR-14: ")
 
 add_table(
     ["ID", "Requirement", "Priority", "Status"],
@@ -816,20 +851,20 @@ add_table(
 )
 
 heading_side("3.2  Non-Functional Requirements")
-body("NFR-01 Performance: The system shall complete PDF ingestion of a 20-page research paper "
-     "within 120 seconds under normal operating conditions.")
-body("NFR-02 Performance: The system shall return a RAG query response within 8 seconds for "
-     "90% of requests.")
-body("NFR-03 Reliability: The system shall handle API rate-limit errors with automatic retry "
-     "and exponential backoff, achieving 99% successful ingestion for compliant PDFs.")
-body("NFR-04 Scalability: The vector store design shall support at least 50 uploaded research "
-     "papers (approximately 100,000 chunks) without performance degradation.")
-body("NFR-05 Usability: The web interface shall be fully functional on modern browsers "
-     "(Chrome, Firefox, Safari) without plugin installation.")
-body("NFR-06 Maintainability: Each backend module shall have a single, well-defined "
-     "responsibility following the Single Responsibility Principle.")
-body("NFR-07 Security: API keys shall never be exposed to the frontend; all external API "
-     "calls shall be proxied through the backend.")
+bullet_item("PDF ingestion of a 20-page paper completes within 120 seconds under normal "
+            "operating conditions.", bold_prefix="NFR-01 Performance: ")
+bullet_item("RAG query responses are returned within 8 seconds for 90% of requests.",
+            bold_prefix="NFR-02 Performance: ")
+bullet_item("API rate-limit errors are handled with automatic retry and exponential backoff, "
+            "achieving 99% successful ingestion for compliant PDFs.", bold_prefix="NFR-03 Reliability: ")
+bullet_item("The vector store supports at least 50 uploaded papers (~100,000 chunks) without "
+            "performance degradation.", bold_prefix="NFR-04 Scalability: ")
+bullet_item("The web interface works on modern browsers (Chrome, Firefox, Safari) without any "
+            "plugin installation.", bold_prefix="NFR-05 Usability: ")
+bullet_item("Each backend module has a single, well-defined responsibility following the "
+            "Single Responsibility Principle.", bold_prefix="NFR-06 Maintainability: ")
+bullet_item("API keys are never exposed to the frontend; all external API calls are proxied "
+            "through the backend server.", bold_prefix="NFR-07 Security: ")
 
 heading_side("3.3  Software Requirements")
 add_table(
@@ -894,17 +929,20 @@ body("The Multimodal AI Research Assistant follows a three-tier client-server ar
 add_figure("4.1", "High-level system architecture diagram", "fig_4_1_architecture.png")
 
 body("The backend is structured into five functional layers:")
-body("Layer 1 — API Layer (src/api/routes.py): Exposes 14 REST endpoints, handles request "
-     "validation using Pydantic models, manages lazy singleton initialisation of heavy "
-     "components, and serialises responses to JSON.")
-body("Layer 2 — Ingestion Layer (src/ingestion/): Orchestrates the six-stage PDF processing "
-     "pipeline. Runs in a background thread to support async upload semantics.")
-body("Layer 3 — Storage Layer (src/storage/): Manages embedding generation (EmbeddingService), "
-     "vector persistence (VectorStore → ChromaDB), and document metadata (DocumentStore → SQLite).")
-body("Layer 4 — Retrieval and Generation Layer (src/retrieval/, src/generation/): Implements "
-     "the nine RAG pipelines, the ReAct agent, and the LLM client wrappers.")
-body("Layer 5 — Humanizer Layer (src/generation/humanizer.py): Provides AI detection scoring "
-     "and iterative text humanization.")
+bullet_item("src/api/routes.py — exposes 14 REST endpoints, validates requests via Pydantic, "
+            "and manages lazy singleton init of heavy components.",
+            bold_prefix="API Layer: ")
+bullet_item("src/ingestion/ — orchestrates the six-stage PDF processing pipeline in a "
+            "background thread to support async upload semantics.",
+            bold_prefix="Ingestion Layer: ")
+bullet_item("src/storage/ — handles embedding generation (EmbeddingService), vector persistence "
+            "(VectorStore → ChromaDB), and document metadata (DocumentStore → SQLite).",
+            bold_prefix="Storage Layer: ")
+bullet_item("src/retrieval/ and src/generation/ — implement the nine RAG task pipelines, the "
+            "ReAct agent, and the LLM client wrappers.",
+            bold_prefix="Retrieval & Generation Layer: ")
+bullet_item("src/generation/humanizer.py — provides AI detection scoring and iterative text "
+            "rewriting.", bold_prefix="Humanizer Layer: ")
 
 heading_side("4.2  Ingestion Pipeline Design")
 body("The ingestion pipeline is the central data transformation subsystem. It accepts a raw "
@@ -1000,12 +1038,12 @@ body("The ReAct Research Agent is designed around a maximum of ten reasoning ite
 add_figure("4.5", "ReAct agent iteration flow", "fig_4_5_agent_flow.png")
 
 body("Five tool functions are registered with the agent:")
-body("— search_text(query, source_file): Retrieves text chunks; falls back to unfiltered "
-     "search if no results above threshold.")
-body("— search_tables(query, source_file): Retrieves only table chunks.")
-body("— search_figures(query, source_file): Retrieves only figure/image chunks.")
-body("— search_equations(query, source_file): Retrieves only equation chunks.")
-body("— get_paper_list(): Returns the list of all ingested paper filenames.")
+bullet_item("Retrieves text chunks; falls back to an unfiltered search if no results pass "
+            "the similarity threshold.", bold_prefix="search_text(query, source_file): ")
+bullet_item("Retrieves only table chunks from the vector store.", bold_prefix="search_tables(query, source_file): ")
+bullet_item("Retrieves only figure and image description chunks.", bold_prefix="search_figures(query, source_file): ")
+bullet_item("Retrieves only equation chunks with their LaTeX source.", bold_prefix="search_equations(query, source_file): ")
+bullet_item("Returns the list of all ingested paper filenames.", bold_prefix="get_paper_list(): ")
 
 body("Each tool's output is truncated to 1,500 characters to prevent context overflow. The "
      "agent prompt uses the ReAct format with explicit format instructions, tool definitions "
@@ -1030,12 +1068,16 @@ body("The frontend is built with Next.js 15 using the App Router paradigm, which
      "server-side rendering, automatic code splitting, and optimised client-side navigation. "
      "The application is structured into five main pages, each corresponding to a distinct "
      "research workflow:")
-body("— Search (default): Conversational RAG QA interface with document selector and "
-     "agent/RAG mode toggle.")
-body("— Compare: Side-by-side paper comparison with document selection dropdowns.")
-body("— Survey: Literature survey and trend analysis generation with topic input.")
-body("— Humanizer: Text input panel with AI detection scoring and iterative humanization.")
-body("— Trends: Research trend analysis dashboard with multi-paper context.")
+bullet_item("Conversational RAG QA interface with a document selector and an agent/RAG mode "
+            "toggle.", bold_prefix="Search (default): ")
+bullet_item("Side-by-side paper comparison with two independent document selection dropdowns.",
+            bold_prefix="Compare: ")
+bullet_item("Literature survey and trend analysis generation with a free-text topic input.",
+            bold_prefix="Survey: ")
+bullet_item("Text input panel with live AI detection scoring and iterative humanization feedback.",
+            bold_prefix="Humanizer: ")
+bullet_item("Research trend analysis dashboard drawing context from multiple uploaded papers.",
+            bold_prefix="Trends: ")
 
 add_figure("4.7", "Next.js frontend page layout and component hierarchy", "fig_4_7_frontend.png")
 
@@ -1561,10 +1603,11 @@ add_page_break()
 heading_main("CHAPTER – 8\nCONCLUSION AND FUTURE SCOPE")
 
 heading_side("8.1  Conclusion")
-body("This project successfully designed and implemented a comprehensive Multimodal AI Research "
-     "Assistant that addresses the key limitations of existing research assistance tools: "
-     "text-only processing, absence of persistent knowledge bases, lack of multi-hop reasoning "
-     "capability, and the challenge of academic acceptability of AI-generated content.")
+body("Building a genuinely useful research assistant turns out to require solving four separate "
+     "hard problems at once: processing documents beyond plain text, maintaining a persistent "
+     "knowledge base, reasoning across multiple retrieval steps, and ensuring generated content "
+     "reads as academically authentic rather than machine-produced. This project addressed all "
+     "four in an integrated system that holds up in practice.")
 
 body("The system's six-stage multimodal ingestion pipeline — combining PyMuPDF, pdfplumber, "
      "EasyOCR, and Gemini 2.0 Flash Vision — successfully extracts text, tables, figures, "
@@ -1574,11 +1617,11 @@ body("The system's six-stage multimodal ingestion pipeline — combining PyMuPDF
      "narrative text, proved effective in practice, achieving an overall Hit Rate@10 of 0.88 "
      "across modalities.")
 
-body("The nine specialised RAG pipeline methods provide a complete research workflow covering "
-     "question answering, summarisation, comparative analysis, literature survey generation, "
-     "research gap identification, and trend analysis. The RAGAS evaluation demonstrated "
-     "strong faithfulness (0.81) and low hallucination rate (7%), attributable to the "
-     "context-grounded prompt design and the retrieval-augmented architecture.")
+body("The nine RAG pipeline methods together cover a full research workflow — from one-line "
+     "questions all the way to multi-paper literature surveys and gap identification. RAGAS "
+     "evaluation returned a faithfulness score of 0.81 with a hallucination rate of just 7%, "
+     "which we attribute to the context-grounded prompt design keeping the model anchored to "
+     "retrieved evidence rather than its own parametric memory.")
 
 body("The ReAct agent demonstrated the value of agentic reasoning for complex queries, "
      "achieving 80% accuracy on 2-hop questions and 64% on 4+-hop questions through "
@@ -1590,49 +1633,41 @@ body("The hybrid AI Detection and Humanization Engine, combining RoBERTa with he
      "AI detection scores from an initial mean of 78.3% to below 20% for 92.5% of "
      "paragraphs within two rewriting passes.")
 
-body("In summary, this project demonstrates that a production-quality multimodal research "
-     "assistant combining RAG, agentic reasoning, and AI humanization is achievable using "
-     "publicly available APIs and open-source libraries, and provides a meaningful "
-     "advancement over existing general-purpose AI assistants for research workflows.")
+body("Taken together, these results show that a production-quality multimodal research assistant "
+     "— combining RAG, agentic reasoning, and AI humanization — is achievable with publicly "
+     "available APIs and open-source libraries. It's not a toy demo; it's a system that handles "
+     "real papers and returns answers with traceable citations. That's a meaningful step forward "
+     "from what existing general-purpose AI assistants can offer research workflows today.")
 
 heading_side("8.2  Future Enhancements")
 body("Several directions for future enhancement have been identified:")
 
-body("1. Knowledge Graph Integration: Constructing a paper-level knowledge graph capturing "
-     "entity relationships (citations, shared datasets, competing methodologies) would "
-     "enable graph-traversal-based retrieval alongside vector search, improving multi-hop "
-     "reasoning accuracy for relationship-intensive queries, as demonstrated by KA-RAG.")
-
-body("2. Multi-Agent Architecture: Decomposing the single ReAct agent into specialised agents "
-     "— a planner, a retriever agent, a critique agent, and a synthesis agent — following "
-     "the MA-RAG framework would likely improve performance on complex 4+-hop questions "
-     "where a single agent's reasoning chain becomes unwieldy.")
-
-body("3. Fine-Tuned Embedding Model: Fine-tuning the all-MiniLM-L6-v2 model on a domain-specific "
-     "scientific corpus (e.g., arXiv papers) using contrastive learning with hard negatives "
-     "would improve retrieval precision for highly technical scientific vocabulary.")
-
-body("4. Streaming Generation: Implementing server-sent events (SSE) or WebSocket streaming "
-     "for LLM generation would improve the perceived responsiveness of the interface, "
-     "especially for long-form outputs such as literature surveys and trend analyses.")
-
-body("5. Long-Document Support: Integrating a hierarchical summarisation pipeline to handle "
-     "very long documents (100+ pages) that exceed even the extended context strategies "
-     "currently in place. This could use a map-reduce approach: summarise each section "
-     "independently, then synthesise across section summaries.")
-
-body("6. Multi-User Support: Adding JWT-based authentication and per-user isolated knowledge "
-     "bases would enable the system to serve multiple concurrent users with separate "
-     "document collections, extending its applicability from individual researchers to "
-     "research teams and academic institutions.")
-
-body("7. Automatic Web Ingestion: Integrating a Semantic Scholar or arXiv API connector "
-     "would allow users to add papers to their knowledge base by providing a DOI or "
-     "arXiv identifier, without needing to manually download and upload PDFs.")
-
-body("8. Evaluation Dashboard: A built-in evaluation dashboard that continuously runs "
-     "RAGAS metrics on a maintained benchmark test set would provide ongoing quality "
-     "monitoring as underlying models and retrieval strategies are updated.")
+bullet_item("Build a paper-level knowledge graph capturing citations, shared datasets, and "
+            "competing methodologies — adding graph-traversal retrieval alongside vector search "
+            "to improve multi-hop accuracy on relationship-intensive queries (per KA-RAG).",
+            bold_prefix="Knowledge Graph Integration: ")
+bullet_item("Decompose the single ReAct agent into a planner, retriever, critique agent, and "
+            "synthesis agent following the MA-RAG framework — particularly helpful for complex "
+            "4+-hop questions where a single reasoning chain becomes unwieldy.",
+            bold_prefix="Multi-Agent Architecture: ")
+bullet_item("Fine-tune all-MiniLM-L6-v2 on a domain-specific scientific corpus (e.g., arXiv) "
+            "using contrastive learning with hard negatives to sharpen retrieval precision for "
+            "highly technical vocabulary.", bold_prefix="Fine-Tuned Embedding Model: ")
+bullet_item("Add server-sent events (SSE) or WebSocket streaming for LLM generation to make "
+            "long-form outputs like literature surveys feel responsive rather than frozen while "
+            "generating.", bold_prefix="Streaming Generation: ")
+bullet_item("Integrate a hierarchical map-reduce summarisation pipeline for papers exceeding "
+            "100 pages, summarising each section independently then synthesising across them.",
+            bold_prefix="Long-Document Support: ")
+bullet_item("Add JWT-based authentication with per-user isolated knowledge bases, extending the "
+            "system from single researchers to whole research teams.",
+            bold_prefix="Multi-User Support: ")
+bullet_item("Connect to Semantic Scholar or arXiv APIs so users can add papers by DOI or "
+            "identifier rather than manually downloading and re-uploading PDFs.",
+            bold_prefix="Automatic Web Ingestion: ")
+bullet_item("Build an in-product evaluation dashboard running RAGAS metrics continuously on a "
+            "maintained benchmark set, giving ongoing quality monitoring as models update.",
+            bold_prefix="Evaluation Dashboard: ")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  REFERENCES

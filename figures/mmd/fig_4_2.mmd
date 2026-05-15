@@ -1,0 +1,34 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F','primaryTextColor': '#FFFFFF','primaryBorderColor': '#0D2137','lineColor': '#4A90D9','fontFamily': 'Arial, sans-serif','fontSize': '17px'}}}%%
+flowchart TD
+    PDF(["📄  PDF Upload"])
+
+    subgraph EXTRACT["  Extraction Processors  "]
+        direction LR
+        P1["① PDFProcessor\nPyMuPDF\nText + headings\nfont ≥ 14pt or keyword"]
+        P2["② TableExtractor\npdfplumber\nBorders → Markdown\nraw cells preserved"]
+        P3["③ ImageExtractor\nPyMuPDF\nSave PNG/JPEG\nfilter < 50×50 px"]
+        P4["④ OCRProcessor\nEasyOCR\nScanned text\nconfidence score"]
+        P5["⑤ VisionAnalyzer\nGemini 2.0 Flash\nFigure descriptions\n4 s rate limit"]
+        P6["⑥ EquationExtractor\nGemini Vision\nImage → LaTeX\n+ explanation"]
+    end
+
+    subgraph CHUNK["  Chunking & Embedding  "]
+        direction LR
+        P7["⑦ SemanticChunker\nText: 512 chars · 50 overlap\nTable/Fig/Eq: single chunk\nUUID4 per chunk"]
+        P8["📐  EmbeddingService\nall-MiniLM-L6-v2\n384-dim · L2-normalised\nbatch = 32"]
+    end
+
+    OUT(["🗄️  ChromaDB + SQLite\nDocument status → completed"])
+
+    PDF --> EXTRACT --> CHUNK --> OUT
+
+    style PDF fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style OUT fill:#27AE60,color:#fff,stroke:#1A7A42
+    style P1 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style P2 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style P3 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style P4 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style P5 fill:#16A085,color:#fff,stroke:#0E6655
+    style P6 fill:#16A085,color:#fff,stroke:#0E6655
+    style P7 fill:#E67E22,color:#fff,stroke:#C0621A
+    style P8 fill:#C0392B,color:#fff,stroke:#922B21

@@ -185,26 +185,26 @@ plt.close()
 print("Saved fig_4_3_vector_space.png")
 
 # ── Fig 5.3  Embedding pipeline bar (processing stages) ───────────────────────
-fig, ax = plt.subplots(figsize=(10, 4))
+fig, ax = plt.subplots(figsize=(12, 5))
 stages = ["Raw Text\n(512 chars)", "Tokenizer\n(BERT WordPiece)", "Token\nEmbeddings\n(768-dim)",
           "Mean Pooling\n+ L2 Norm", "Final Vector\n(384-dim)"]
 widths = [1, 1, 1, 1, 1]
 colors = ["#4472C4", "#ED7D31", "#A9D18E", "#FF0000", "#7030A0"]
 left = 0
 for w, stage, color in zip(widths, stages, colors):
-    ax.barh(0, w, left=left, color=color, edgecolor="black", height=0.5)
+    ax.barh(0, w, left=left, color=color, edgecolor="black", height=0.55)
     ax.text(left + w/2, 0, stage, ha="center", va="center",
-            fontsize=9, fontweight="bold", color="white")
+            fontsize=13, fontweight="bold", color="white")
     if left + w < sum(widths):
         ax.annotate("", xy=(left + w + 0.02, 0),
                     xytext=(left + w - 0.02, 0),
-                    arrowprops=dict(arrowstyle="->", color="black", lw=1.5))
+                    arrowprops=dict(arrowstyle="->", color="black", lw=2.0))
     left += w
 ax.set_xlim(0, sum(widths))
-ax.set_ylim(-0.5, 0.5)
+ax.set_ylim(-0.6, 0.6)
 ax.axis("off")
 ax.set_title("Fig. 5.3  Embedding Pipeline: Text → 384-Dimensional Normalised Vector",
-             fontsize=12, fontweight="bold", pad=15)
+             fontsize=14, fontweight="bold", pad=18)
 fig.tight_layout()
 fig.savefig(f"{OUT}/fig_5_3_embedding_pipeline.png", dpi=300, bbox_inches="tight")
 plt.close()

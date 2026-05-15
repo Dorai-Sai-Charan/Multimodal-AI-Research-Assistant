@@ -1,0 +1,39 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F','primaryTextColor': '#FFFFFF','primaryBorderColor': '#0D2137','lineColor': '#4A90D9','clusterBkg': '#EBF5FF','clusterBorder': '#4A90D9','fontFamily': 'Arial, sans-serif','fontSize': '17px'}}}%%
+graph LR
+    FE["🖥️  Frontend\nNext.js 15"]
+
+    subgraph DOCS["Document Management"]
+        A1["POST  /api/upload\nAsync PDF ingestion"]
+        A2["GET  /api/documents\nList all papers"]
+        A3["DELETE  /api/documents/id\nRemove paper + chunks"]
+    end
+
+    subgraph CORE["Core RAG & Agent"]
+        A4["POST  /api/query\nSingle-shot RAG QA"]
+        A5["POST  /api/agent\nReAct multi-hop"]
+        A6["POST  /api/summarize"]
+        A7["POST  /api/compare"]
+    end
+
+    subgraph RESEARCH["Research Tasks"]
+        A8["POST  /api/literature-survey"]
+        A9["POST  /api/research-gaps"]
+        A10["POST  /api/explain"]
+        A11["POST  /api/recommend"]
+        A12["POST  /api/trends"]
+    end
+
+    subgraph HUMAN["Humanizer & Config"]
+        A13["POST  /api/detect-ai\nAI content scoring"]
+        A14["POST  /api/humanize\nText humanization"]
+        A15["GET  /api/models\nAvailable LLM list"]
+    end
+
+    FE --> DOCS & CORE & RESEARCH & HUMAN
+
+    style FE fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style A1 fill:#C0392B,color:#fff,stroke:#922B21
+    style A4 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style A5 fill:#E67E22,color:#fff,stroke:#C0621A
+    style A13 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style A14 fill:#27AE60,color:#fff,stroke:#1A7A42

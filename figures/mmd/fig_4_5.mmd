@@ -1,0 +1,30 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+flowchart TD
+    INIT(["🚀  Question + Chat History\nmax_iterations = 10"])
+
+    subgraph LOOP["  🔄  ITERATION LOOP  "]
+        LLM["🤖  Groq LLM Call\ntemperature = 0.1\ntool_schemas provided"]
+        CHECK{"tool_calls\nin response?"}
+        PARSE["Parse Action Name\n+ Action Input JSON"]
+        EXEC["Execute Tool\nsearch_text\nsearch_tables\nsearch_figures\nsearch_equations\nget_paper_list"]
+        OBS["Record Observation\ntruncated to 1 500 chars"]
+        APP["Append Step to\nWorking Memory Prompt"]
+        INC{"iteration\n< 10 ?"}
+        LLM --> CHECK
+        CHECK -->|"Yes"| PARSE --> EXEC --> OBS --> APP --> INC
+        INC -->|"Yes"| LLM
+    end
+
+    CHECK -->|"No — plain text"| DONE
+    INC -->|"No — limit reached"| DONE
+    DONE(["✅  AgentResponse\nanswer + reasoning_steps\n+ citations + total_steps"])
+
+    INIT --> LLM
+
+    style INIT fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style DONE fill:#27AE60,color:#fff,stroke:#1A7A42
+    style LLM fill:#E67E22,color:#fff,stroke:#C0621A
+    style EXEC fill:#8E44AD,color:#fff,stroke:#6C3483
+    style OBS fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style CHECK fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style INC fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

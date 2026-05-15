@@ -1,0 +1,29 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+flowchart TD
+    BLOCK(["📄  Text Block\nfrom PyMuPDF page.get_text"])
+
+    FS{"Font size\n≥ 14 pt ?"}
+    KW{"Matches keyword?\nAbstract · Introduction\nMethodology · Results\nConclusion · References ..."}
+    NUM{"Numbered heading?\ne.g.  1. Introduction\n      2.1 Methodology"}
+
+    HEADING["✅  SECTION HEADING\nUpdate current_section_heading"]
+    BODY["📝  BODY TEXT\nInherit current_section_heading"]
+    ELEM(["📦  ExtractedElement\nelement_type = text\npage_number  ·  section_heading\nfont_size  ·  content"])
+
+    BLOCK --> FS
+    FS -->|"Yes"| HEADING
+    FS -->|"No"| KW
+    KW -->|"Yes"| HEADING
+    KW -->|"No"| NUM
+    NUM -->|"Yes"| HEADING
+    NUM -->|"No"| BODY
+    HEADING --> ELEM
+    BODY --> ELEM
+
+    style BLOCK fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style HEADING fill:#27AE60,color:#fff,stroke:#1A7A42
+    style BODY fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style ELEM fill:#E67E22,color:#fff,stroke:#C0621A
+    style FS fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style KW fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style NUM fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

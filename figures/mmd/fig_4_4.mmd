@@ -1,0 +1,36 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+graph LR
+    Q(["📥  User Request"])
+    RM["RAGPipeline\nMethod Router"]
+
+    M1["query\nTop-10 · 4 000 chars"]
+    M2["summarize\nTop-20 · 6 000 chars"]
+    M3["compare\nTop-15×2 · 3 000×2 chars"]
+    M4["literature_survey\nTop-30 · 8 000 chars"]
+    M5["identify_gaps\n3 queries · 6 000 chars"]
+    M6["explain\nTop-12 · 5 000 chars"]
+    M7["recommend\nTop-20 · 6 000 chars"]
+    M8["analyze_trends\n3 queries · 8 000 chars"]
+    M9["multi_doc_query\nTop-20 · 7 000 chars"]
+
+    LLM["🤖  Groq LLM\nLlama 3.3 70B"]
+    R(["✅  Answer + Citations"])
+
+    Q --> RM
+    RM --> M1 & M2 & M3 & M4 & M5 & M6 & M7 & M8 & M9
+    M1 & M2 & M3 & M4 & M5 & M6 & M7 & M8 & M9 --> LLM
+    LLM --> R
+
+    style Q fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style RM fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style LLM fill:#E67E22,color:#fff,stroke:#C0621A
+    style R fill:#27AE60,color:#fff,stroke:#1A7A42
+    style M1 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M2 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M3 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M4 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M5 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M6 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M7 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M8 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
+    style M9 fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

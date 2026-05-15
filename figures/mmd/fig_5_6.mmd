@@ -1,0 +1,25 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+flowchart TD
+    IN(["📝  AI-Generated Text"])
+
+    subgraph LOOP["  REFINEMENT LOOP  (max 3 passes)  "]
+        DETECT["🔍  Hybrid AI Detection\n① RoBERTa model  (0-100 %)\n② Heuristic metrics:\n   Burstiness = sigma / mu  sentence lengths\n   TTR = unique words / total words\n   Human marker density"]
+        BLEND["⚖️  Blend Scores\nfinal = 0.6 x RoBERTa + 0.4 x heuristic"]
+        CHECK{"AI score\n< 20 % ?"}
+        REWRITE["✍️  Gemini 2.0 Flash Rewrite\nVary sentence length\nAdd contractions\nInsert em-dashes and parentheticals\nNatural human transitions"]
+        DETECT --> BLEND --> CHECK
+        CHECK -->|"No, passes < 3"| REWRITE --> DETECT
+    end
+
+    DONE(["✅  HumanizationResponse\noriginal_text\nhumanized_text\nchanges_made\nmetrics before and after"])
+
+    IN --> DETECT
+    CHECK -->|"Yes - done"| DONE
+    CHECK -->|"No, pass = 3"| DONE
+
+    style IN fill:#C0392B,color:#fff,stroke:#922B21
+    style DONE fill:#27AE60,color:#fff,stroke:#1A7A42
+    style DETECT fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style BLEND fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style REWRITE fill:#E67E22,color:#fff,stroke:#C0621A
+    style CHECK fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9
