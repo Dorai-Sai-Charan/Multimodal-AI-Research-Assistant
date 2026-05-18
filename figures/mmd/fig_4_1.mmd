@@ -1,0 +1,36 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'clusterBkg': '#EBF5FF', 'clusterBorder': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+graph TB
+    subgraph FE["🖥️  FRONTEND — Next.js 15 + React 19  (Port 3000)"]
+        UI1[Search] ~~~ UI2[Compare] ~~~ UI3[Survey] ~~~ UI4[Humanizer] ~~~ UI5[Trends]
+    end
+    subgraph BE["⚙️  BACKEND — FastAPI + Uvicorn  (Port 8000)"]
+        API["API Layer\n14 REST Endpoints"]
+        ING["Ingestion Layer\n6 Processors + Chunker"]
+        RAG["RAG Pipeline\n9 Task Methods"]
+        AGT["ReAct Agent\nMulti-hop Tool Loop"]
+        HUM["Humanizer\nAI Detection + Rewrite"]
+        STR["Storage Layer\nEmbed + Vector + Metadata"]
+    end
+    subgraph DATA["🗄️  DATA LAYER"]
+        CDB[("ChromaDB\nHNSW Vectors")]
+        SDB[("SQLite\nMetadata")]
+        DSK[/"Disk Storage\nPDFs + Images"/]
+    end
+    subgraph EXT["☁️  EXTERNAL APIs"]
+        GROQ["Groq API\nLlama 3.3 70B"]
+        GEM["Gemini 2.0 Flash\nVision + LaTeX"]
+    end
+    FE <-->|"HTTP / JSON"| API
+    API --> ING & RAG & AGT & HUM
+    ING & RAG & AGT --> STR
+    STR <--> CDB & SDB & DSK
+    RAG & AGT & ING --> GROQ & GEM
+
+    style API fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style ING fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style RAG fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style AGT fill:#E67E22,color:#fff,stroke:#C0621A
+    style HUM fill:#27AE60,color:#fff,stroke:#1A7A42
+    style STR fill:#8E44AD,color:#fff,stroke:#6C3483
+    style GROQ fill:#C0392B,color:#fff,stroke:#922B21
+    style GEM fill:#16A085,color:#fff,stroke:#0E6655

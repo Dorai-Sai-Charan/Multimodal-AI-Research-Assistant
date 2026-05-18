@@ -1,0 +1,37 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'clusterBkg': '#EBF5FF', 'clusterBorder': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+graph LR
+    subgraph INPUT["  📄  INPUT"]
+        A[PDF Research Papers]
+    end
+    subgraph PROCESS["  ⚙️  MULTIMODAL PROCESSING"]
+        B1[Text Extraction]
+        B2[Table Extraction]
+        B3[Image Extraction]
+        B4[OCR Processing]
+        B5[Vision Analysis]
+        B6[Equation Extraction]
+    end
+    subgraph STORAGE["  🗄️  KNOWLEDGE BASE"]
+        C1[ChromaDB\nVector Store]
+        C2[SQLite\nMetadata]
+    end
+    subgraph QUERY["  🤖  AI REASONING ENGINE"]
+        D1[RAG Pipeline\n9 Task Methods]
+        D2[ReAct Agent\nMulti-hop Reasoning]
+        D3[Humanizer\nAI Detection]
+    end
+    subgraph OUTPUT["  💬  OUTPUT"]
+        E1[Cited Answers]
+        E2[Literature Survey]
+        E3[Paper Comparison]
+        E4[Research Gaps]
+    end
+    A --> B1 & B2 & B3 & B4 & B5 & B6
+    B1 & B2 & B3 & B4 & B5 & B6 --> C1 & C2
+    C1 --> D1 & D2
+    D1 & D2 --> D3
+    D3 --> E1 & E2 & E3 & E4
+    style A fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style C1 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style C2 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style D3 fill:#27AE60,color:#fff,stroke:#1A7A42

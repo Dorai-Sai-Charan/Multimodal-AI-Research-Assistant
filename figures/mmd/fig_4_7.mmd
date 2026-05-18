@@ -1,0 +1,41 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+graph TD
+    APP["Next.js 15\nApp Router"]
+    LAYOUT["RootLayout\nNavSidebar + ModelSettings Drawer"]
+
+    APP --> LAYOUT
+
+    LAYOUT --> P1["Search Page  /"]
+    LAYOUT --> P2["Compare Page  /compare"]
+    LAYOUT --> P3["Survey Page  /survey"]
+    LAYOUT --> P4["Humanizer Page  /humanizer"]
+    LAYOUT --> P5["Trends Page  /trends"]
+
+    P1 --> C1["ChatInterface"]
+    P1 --> C2["DocumentSelector"]
+    P1 --> C3["ModeToggle\nRAG / Agent"]
+
+    C1 --> C4["MessageList"]
+    C1 --> C5["TextInput + Submit"]
+
+    C4 --> C6["MarkdownRenderer\nreact-markdown + remark-gfm"]
+    C4 --> C7["KaTeX Math\nInline + Display"]
+    C4 --> C8["CitationPanel\nSource + Page + Score"]
+
+    P2 --> C9["PaperDropdown × 2"]
+    P2 --> C10["ComparisonTable"]
+
+    P4 --> C11["AIScoreGauge"]
+    P4 --> C12["HumanizedOutput"]
+
+    style APP fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style LAYOUT fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style P1 fill:#E67E22,color:#fff,stroke:#C0621A
+    style P2 fill:#E67E22,color:#fff,stroke:#C0621A
+    style P3 fill:#E67E22,color:#fff,stroke:#C0621A
+    style P4 fill:#E67E22,color:#fff,stroke:#C0621A
+    style P5 fill:#E67E22,color:#fff,stroke:#C0621A
+    style C6 fill:#27AE60,color:#fff,stroke:#1A7A42
+    style C7 fill:#27AE60,color:#fff,stroke:#1A7A42
+    style C8 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style C11 fill:#C0392B,color:#fff,stroke:#922B21

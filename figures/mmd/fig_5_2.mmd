@@ -1,0 +1,33 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+flowchart TD
+    ELEM(["📦  ExtractedElement"])
+    TYPE{"Content\nType ?"}
+
+    TEXT["RecursiveCharacterTextSplitter\nchunk_size = 512 chars\nchunk_overlap = 50 chars\nparagraph → line → sentence → word"]
+    MULTI["Multiple Chunks\nEach with UUID4 ID"]
+
+    TABLE["Single Chunk — Table\nFull Markdown table preserved\nRaw cell data in metadata"]
+    S1["One Chunk + UUID4"]
+
+    FIG["Single Chunk — Figure\nGemini Vision description\nimage_path in metadata"]
+    S2["One Chunk + UUID4"]
+
+    EQN["Single Chunk — Equation\nLaTeX source string\nExplanation in metadata"]
+    S3["One Chunk + UUID4"]
+
+    STORE(["🗄️  EmbeddingService\nall-MiniLM-L6-v2 · 384-dim\nChromaDB upsert"])
+
+    ELEM --> TYPE
+    TYPE -->|"text"| TEXT --> MULTI
+    TYPE -->|"table"| TABLE --> S1
+    TYPE -->|"figure"| FIG --> S2
+    TYPE -->|"equation"| EQN --> S3
+    MULTI & S1 & S2 & S3 --> STORE
+
+    style ELEM fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style STORE fill:#27AE60,color:#fff,stroke:#1A7A42
+    style TEXT fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style TABLE fill:#E67E22,color:#fff,stroke:#C0621A
+    style FIG fill:#8E44AD,color:#fff,stroke:#6C3483
+    style EQN fill:#16A085,color:#fff,stroke:#0E6655
+    style TYPE fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

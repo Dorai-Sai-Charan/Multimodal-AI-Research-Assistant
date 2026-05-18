@@ -1,0 +1,57 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F','primaryTextColor': '#FFFFFF','primaryBorderColor': '#0D2137','lineColor': '#4A90D9','clusterBkg': '#EBF5FF','clusterBorder': '#4A90D9','fontFamily': 'Arial, sans-serif','fontSize': '17px'}}}%%
+graph TD
+    ROOT(["📄  Multimodal\nDocument Processing"])
+
+    subgraph TXT["  📝  Text Content  "]
+        direction LR
+        T1["Section Headings"]
+        T2["Body Paragraphs"]
+        T3["Figure Captions"]
+    end
+
+    subgraph TAB["  📊  Tabular Data  "]
+        direction LR
+        B1["Structured Tables"]
+        B2["Markdown Format"]
+        B3["Raw Cell Values"]
+    end
+
+    subgraph VIS["  🖼️  Visual Elements  "]
+        direction LR
+        V1["Figures & Charts"]
+        V2["Diagrams"]
+        V3["Photographs"]
+    end
+
+    subgraph MATH["  ∑  Mathematical  "]
+        direction LR
+        M1["LaTeX Equations"]
+        M2["Symbols"]
+        M3["Variable Definitions"]
+    end
+
+    subgraph SCAN["  🔍  Scanned Content  "]
+        direction LR
+        S1["OCR Text"]
+        S2["Handwriting"]
+        S3["Low-quality Scans"]
+    end
+
+    ROOT --> TXT & TAB & VIS & MATH & SCAN
+
+    style ROOT fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style T1 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style T2 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style T3 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style B1 fill:#E67E22,color:#fff,stroke:#C0621A
+    style B2 fill:#E67E22,color:#fff,stroke:#C0621A
+    style B3 fill:#E67E22,color:#fff,stroke:#C0621A
+    style V1 fill:#27AE60,color:#fff,stroke:#1A7A42
+    style V2 fill:#27AE60,color:#fff,stroke:#1A7A42
+    style V3 fill:#27AE60,color:#fff,stroke:#1A7A42
+    style M1 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style M2 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style M3 fill:#8E44AD,color:#fff,stroke:#6C3483
+    style S1 fill:#16A085,color:#fff,stroke:#0E6655
+    style S2 fill:#16A085,color:#fff,stroke:#0E6655
+    style S3 fill:#16A085,color:#fff,stroke:#0E6655

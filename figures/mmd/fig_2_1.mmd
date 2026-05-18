@@ -1,0 +1,22 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F','primaryTextColor': '#FFFFFF','primaryBorderColor': '#0D2137','lineColor': '#4A90D9','edgeLabelBackground': '#EBF5FF','fontFamily': 'Arial, sans-serif','fontSize': '17px'}}}%%
+flowchart TD
+    Q(["🔍  User Question"])
+    E1["📐  Embed Query\nall-MiniLM-L6-v2  ·  384-dim vector"]
+    VDB[("🗄️  ChromaDB\nHNSW Index  ·  Cosine Similarity")]
+    R["📋  Top-K Chunks\nRanked by similarity score"]
+    CTX["📝  Build Context String\nChunks + inline citations"]
+    PROMPT["📄  Fill Prompt Template\nTask-specific template injection"]
+    LLM["🤖  Groq LLM\nLlama 3.3 70B  ·  Generate response"]
+    ANS(["✅  Answer + Source Citations"])
+
+    Q --> E1 --> VDB
+    VDB -->|"Nearest neighbours"| R
+    R --> CTX --> PROMPT --> LLM --> ANS
+
+    style Q fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style ANS fill:#27AE60,color:#fff,stroke:#1A7A42
+    style LLM fill:#E67E22,color:#fff,stroke:#C0621A
+    style VDB fill:#8E44AD,color:#fff,stroke:#6C3483
+    style E1 fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style CTX fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style PROMPT fill:#16A085,color:#fff,stroke:#0E6655

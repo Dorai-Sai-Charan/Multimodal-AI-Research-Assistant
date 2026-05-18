@@ -1,0 +1,23 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'fontFamily': 'Arial, sans-serif', 'fontSize': '14px'}}}%%
+flowchart TD
+    START(["🚀  Question + Chat History"])
+
+    THINK["💭  THOUGHT\nLLM analyses the question\nand plans next action"]
+    ACT["⚡  ACTION\nsearch_text\nsearch_tables\nsearch_figures\nsearch_equations\nget_paper_list"]
+    OBS["👁️  OBSERVATION\nTool returns\nretrieved content"]
+    CHECK{"Finish action\nor max 10\niterations?"}
+    FINAL(["✅  Final Answer\n+ Reasoning Trace\n+ Source Citations"])
+
+    START --> THINK
+    THINK --> ACT
+    ACT --> OBS
+    OBS --> CHECK
+    CHECK -->|"No — iterate"| THINK
+    CHECK -->|"Yes — done"| FINAL
+
+    style START fill:#1E3A5F,color:#fff,stroke:#0D2137
+    style FINAL fill:#27AE60,color:#fff,stroke:#1A7A42
+    style THINK fill:#2E6DA4,color:#fff,stroke:#0D2137
+    style ACT fill:#E67E22,color:#fff,stroke:#C0621A
+    style OBS fill:#8E44AD,color:#fff,stroke:#6C3483
+    style CHECK fill:#EBF5FF,color:#1E3A5F,stroke:#4A90D9

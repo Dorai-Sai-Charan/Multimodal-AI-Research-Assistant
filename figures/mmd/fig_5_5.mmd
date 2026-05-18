@@ -1,0 +1,32 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1E3A5F', 'primaryTextColor': '#FFFFFF', 'primaryBorderColor': '#0D2137', 'lineColor': '#4A90D9', 'actorBkg': '#1E3A5F', 'actorBorder': '#0D2137', 'actorTextColor': '#FFFFFF', 'signalColor': '#4A90D9', 'labelBoxBkgColor': '#EBF5FF', 'labelBoxBorderColor': '#4A90D9', 'labelTextColor': '#1E3A5F', 'fontFamily': 'Arial, sans-serif', 'fontSize': '17px'}}}%%
+sequenceDiagram
+    participant U as 👤 User
+    participant A as 🧠 ResearchAgent
+    participant L as 🤖 Groq LLM
+    participant T as 🔧 AgentTools
+
+    U->>A: Compare BERT and GPT attention mechanisms<br/>and show GLUE benchmark scores
+
+    Note over A,L: Iteration 1
+    A->>L: Prompt + tool_schemas
+    L-->>A: Action: get_paper_list()
+    A->>T: get_paper_list()
+    T-->>A: bert_paper.pdf · gpt_survey.pdf
+
+    Note over A,L: Iteration 2
+    A->>L: Prompt + observation
+    L-->>A: Action: search_text(attention mechanism, bert_paper.pdf)
+    A->>T: search_text(...)
+    T-->>A: Multi-head self-attention chunks
+
+    Note over A,L: Iteration 3
+    A->>L: Prompt + observation
+    L-->>A: Action: search_tables(GLUE benchmark results)
+    A->>T: search_tables(...)
+    T-->>A: BERT = 82.1  ·  GPT = 78.3
+
+    Note over A,L: Iteration 4 — Finish
+    A->>L: Prompt + observation
+    L-->>A: Final Answer with full citations
+
+    A-->>U: AgentResponse (4 steps · citations · answer)
