@@ -78,6 +78,7 @@ flowchart LR
 **Save as:** `fig_2_2_taxonomy.png`
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#AED6F1", "primaryTextColor": "#1A1A1A", "primaryBorderColor": "#2E86C1", "lineColor": "#2E86C1", "secondaryColor": "#A9DFBF", "tertiaryColor": "#FAD7A0", "mainBkg": "#AED6F1", "nodeBorder": "#2E86C1", "cScale0": "#AED6F1", "cScale1": "#A9DFBF", "cScale2": "#FAD7A0", "cScale3": "#F1948A", "cScale4": "#C39BD3", "cScale5": "#85C1E9", "cScale6": "#82E0AA", "cScale7": "#F7DC6F", "cScale8": "#D2B4DE", "cScale9": "#F0B27A", "cScaleLabel0": "#1A1A1A", "cScaleLabel1": "#1A1A1A", "cScaleLabel2": "#1A1A1A", "cScaleLabel3": "#1A1A1A", "cScaleLabel4": "#1A1A1A", "cScaleLabel5": "#1A1A1A", "cScaleLabel6": "#1A1A1A", "cScaleLabel7": "#1A1A1A"}}}%%
 mindmap
   root((Multimodal\nDocument\nProcessing))
     Text

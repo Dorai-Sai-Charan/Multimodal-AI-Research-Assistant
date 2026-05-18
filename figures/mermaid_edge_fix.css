@@ -1,0 +1,13 @@
+/* Remove grey/white boxes from arrow edge labels in Mermaid flowcharts */
+.labelBkg {
+    background-color: transparent !important;
+    opacity: 0 !important;
+}
+.edgeLabel .labelBkg {
+    background-color: transparent !important;
+}
+.edgeLabel rect {
+    fill: transparent !important;
+    stroke: transparent !important;
+    opacity: 0 !important;
+}

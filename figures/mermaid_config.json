@@ -13,7 +13,7 @@
     "clusterBkg": "#EBF5FF",
     "clusterBorder": "#4A90D9",
     "titleColor": "#1E3A5F",
-    "edgeLabelBackground": "#FFFFFF",
+    "edgeLabelBackground": "transparent",
     "attributeBackgroundColorEven": "#EBF5FF",
     "attributeBackgroundColorOdd": "#FFFFFF",
     "fontFamily": "Times New Roman, serif",
