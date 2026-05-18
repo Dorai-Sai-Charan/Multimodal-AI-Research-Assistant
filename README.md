@@ -241,25 +241,63 @@ Multimodal-AI-Research-Assistant/
 
 ### Prerequisites
 - Python 3.10+
+- Node.js 18+
 - Google Gemini API key
 - Groq API key
 
-### 1. Setup
+### 1. Clone the Repository
 ```bash
 git clone <repo-url>
+cd Multimodal-AI-Research-Assistant
+```
+
+### 2. Create and Activate a Virtual Environment
+
+**Linux / macOS:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**Windows (Command Prompt):**
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+```
+
+**Windows (PowerShell):**
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
+
+> After activation, your terminal prompt will be prefixed with `(venv)`.  
+> To deactivate the environment at any time, run `deactivate`.
+
+### 3. Install Dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure
-Add your API keys to the `.env` file:
+### 4. Configure
+Copy or create a `.env` file in the project root and add your API keys:
 ```env
-GEMINI_API_KEY=your_key
-GROQ_API_KEY=your_key
+GEMINI_API_KEY=your_gemini_key
+GROQ_API_KEY=your_groq_key
 ```
 
-### 3. Run
-**Backend:** `python -m src.main`
-**Frontend:** `cd frontend && npm install && npm run dev`
+### 5. Run
+**Backend:**
+```bash
+python -m src.main
+```
+
+**Frontend** (in a separate terminal):
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
