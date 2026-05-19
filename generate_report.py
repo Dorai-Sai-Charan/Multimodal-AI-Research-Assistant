@@ -197,7 +197,7 @@ run = p.add_run("A Modular Multimodal Retrieval-Augmented Agentic Framework for 
 set_font(run, 16, bold=True)
 
 para("A PROJECT REPORT", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=12)
-para("Submitted by", size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
+para("Submitted by", size=12, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
 para("Team No: 22AIE091", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=4)
 
 for sid, name in [
@@ -212,29 +212,76 @@ for sid, name in [
     set_font(r1, 12)
 
 para("in partial fulfillment for the award of the degree of",
-     size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
+     size=12, bold=True, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=16)
 para("BACHELOR OF TECHNOLOGY", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 para("IN", size=12, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("ARTIFICIAL INTELLIGENCE AND DATA SCIENCE", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+para("COMPUTER SCIENCE AND ENGINEERING", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+para("(ARTIFICIAL INTELLIGENCE)", size=14, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 
-for _ in range(2):
-    doc.add_paragraph()
+# Amrita logo
+_logo_path = "/home/nst-kaja/Documents/Dorai/Multimodal-AI-Research-Assistant/figures/amrita_logo.png"
+p_logo = doc.add_paragraph()
+p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+p_logo.paragraph_format.space_before = Pt(18)
+p_logo.paragraph_format.space_after = Pt(18)
+p_logo.add_run().add_picture(_logo_path, width=Inches(2.5))
 
-para("AMRITA SCHOOL OF COMPUTING, BENGALURU", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("AMRITA VISHWA VIDYAPEETHAM", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("BENGALURU 560 035", size=12, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("MAY 2026", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+# Amrita maroon color (RGB 128, 0, 32)
+_MAROON = (128, 0, 32)
+
+def _maroon_para(text, size=13, bold=True):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(4)
+    run = p.add_run(text)
+    set_font(run, size, bold=bold, color=_MAROON)
+    return p
+
+para("AMRITA SCHOOL OF COMPUTING, BENGALURU", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+para("AMRITA VISHWA VIDYAPEETHAM", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+para("BENGALURU 560 035", size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=2)
+para("MAY 2026", size=12, align=WD_ALIGN_PARAGRAPH.CENTER, space_before=4)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  BONAFIDE CERTIFICATE
 # ══════════════════════════════════════════════════════════════════════════════
 add_page_break()
-heading_main("AMRITA VISHWA VIDYAPEETHAM\nAMRITA SCHOOL OF COMPUTING, BENGALURU, 560035")
-para("", space_after=12)
-heading_main("BONAFIDE CERTIFICATE")
 
-body('This is to certify that the project report entitled "A Modular Multimodal Retrieval-Augmented '
-     'Agentic Framework for Intelligent Scientific Document Understanding" submitted by')
+def _bc_header(text, size=14, space_before=6, space_after=2):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(space_before)
+    p.paragraph_format.space_after = Pt(space_after)
+    run = p.add_run(text)
+    set_font(run, size, bold=True)
+    return p
+
+_bc_header("AMRITA VISHWA VIDYAPEETHAM", size=14, space_before=12, space_after=2)
+_bc_header("AMRITA SCHOOL OF COMPUTING, BENGALURU, 560035", size=14, space_before=2, space_after=8)
+
+p_logo2 = doc.add_paragraph()
+p_logo2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+p_logo2.paragraph_format.space_before = Pt(6)
+p_logo2.paragraph_format.space_after = Pt(14)
+p_logo2.add_run().add_picture(_logo_path, width=Inches(2.0))
+
+_bc_header("BONAFIDE CERTIFICATE", size=16, space_before=10, space_after=14)
+
+# Body: project title in red bold
+p_cert = doc.add_paragraph()
+p_cert.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+p_cert.paragraph_format.space_before = Pt(6)
+p_cert.paragraph_format.space_after = Pt(6)
+_r = p_cert.add_run('This is to certify that the project report entitled ')
+set_font(_r, 12)
+_r = p_cert.add_run('"A Modular Multimodal Retrieval-Augmented Agentic Framework for '
+                    'Intelligent Scientific Document Understanding"')
+set_font(_r, 12, bold=True, color=(180, 0, 0))
+_r = p_cert.add_run(' submitted by')
+set_font(_r, 12)
+
 para("", space_after=4)
 for sid, name in [
     ("BL.EN.U4AIE22030", "Dorai Sai Charan"),
@@ -247,35 +294,79 @@ for sid, name in [
     r1 = p.add_run(f"{sid}\t{name}")
     set_font(r1, 12)
 
-body('in partial fulfillment of the requirements as part of Bachelor of Technology in '
-     '"ARTIFICIAL INTELLIGENCE AND DATA SCIENCE" is a bonafide record of the work carried out '
-     'under our guidance and supervision at Amrita School of Computing, Bengaluru.')
+# "in partial fulfillment..." with bold key phrases
+p_partial = doc.add_paragraph()
+p_partial.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+p_partial.paragraph_format.space_before = Pt(10)
+p_partial.paragraph_format.space_after = Pt(6)
+for txt, bold in [
+    ('in partial fulfillment of the requirements as part of ', False),
+    ('Bachelor of Technology', True),
+    (' in ', False),
+    ('"COMPUTER SCIENCE AND ENGINEERING (ARTIFICIAL INTELLIGENCE)"', True),
+    (' is a bonafide record of the work carried out under my guidance and supervision '
+     'at Amrita School of Computing, Bengaluru.', False),
+]:
+    _r = p_partial.add_run(txt)
+    set_font(_r, 12, bold=bold)
+
 para("", space_after=24)
 
-tbl = doc.add_table(rows=2, cols=2)
-tbl.style = "Table Grid"
-cells = tbl.rows[0].cells
-cells[0].text = "____________________"
-cells[1].text = "____________________"
-cells = tbl.rows[1].cells
-cells[0].text = "Project Guide\nDepartment of CSE\nAmrita School of Computing"
-cells[1].text = "Chair\nSchool of Computing"
-for row in tbl.rows:
-    for cell in row.cells:
-        for run in cell.paragraphs[0].runs:
-            set_font(run, 11)
+# Helper: borderless 2-column table
+def _no_border_table(nrows):
+    tbl = doc.add_table(rows=nrows, cols=2)
+    tbl.style = "Table Grid"
+    tblPr = tbl._tbl.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        tbl._tbl.insert(0, tblPr)
+    tblBorders = OxmlElement('w:tblBorders')
+    for bname in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        b = OxmlElement(f'w:{bname}')
+        b.set(qn('w:val'), 'none')
+        b.set(qn('w:sz'), '0')
+        b.set(qn('w:space'), '0')
+        b.set(qn('w:color'), 'auto')
+        tblBorders.append(b)
+    tblPr.append(tblBorders)
+    return tbl
+
+_RED = (180, 0, 0)
+
+def _cell_run(cell, text, size=12, bold=False, color=None):
+    p = cell.paragraphs[0]
+    p.clear()
+    r = p.add_run(text)
+    set_font(r, size, bold=bold, color=color)
+
+# Guide / Chair signature block
+tbl = _no_border_table(4)
+_cell_run(tbl.rows[0].cells[0], "____________________")
+_cell_run(tbl.rows[0].cells[1], "____________________")
+_cell_run(tbl.rows[1].cells[0], "Vishwas H.N", color=_RED)
+_cell_run(tbl.rows[1].cells[1], "Chair Name", color=_RED)
+_cell_run(tbl.rows[2].cells[0], "Assistant Professor(Sr. Gd.)", color=_RED)
+_cell_run(tbl.rows[2].cells[1], "Chair")
+_cell_run(tbl.rows[3].cells[0], "Guide")
+_cell_run(tbl.rows[3].cells[1], "School of Computing")
 
 para("", space_after=16)
-body("This project report was evaluated by us on …………")
+
+p_eval = doc.add_paragraph()
+p_eval.alignment = WD_ALIGN_PARAGRAPH.LEFT
+p_eval.paragraph_format.space_before = Pt(6)
+_r = p_eval.add_run('This project report was evaluated by us on ')
+set_font(_r, 12)
+_r = p_eval.add_run('_____________')
+set_font(_r, 12)
+
 para("", space_after=24)
-tbl2 = doc.add_table(rows=2, cols=2)
-tbl2.style = "Table Grid"
-cells2 = tbl2.rows[0].cells
-cells2[0].text = "____________________"
-cells2[1].text = "____________________"
-cells2 = tbl2.rows[1].cells
-cells2[0].text = "Examiner 1"
-cells2[1].text = "Examiner 2"
+
+tbl2 = _no_border_table(2)
+_cell_run(tbl2.rows[0].cells[0], "____________________")
+_cell_run(tbl2.rows[0].cells[1], "____________________")
+_cell_run(tbl2.rows[1].cells[0], "Examiner 1")
+_cell_run(tbl2.rows[1].cells[1], "Examiner 2")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ACKNOWLEDGEMENTS
@@ -283,33 +374,57 @@ cells2[1].text = "Examiner 2"
 add_page_break()
 heading_main("ACKNOWLEDGEMENTS")
 
-body("The satisfaction that accompanies the successful completion of any task would be incomplete "
-     "without mentioning the people who made it possible, whose constant encouragement and "
-     "guidance have been an endless source of inspiration throughout the course of this project work.")
+def _ack_para(space_before=6, indent=False):
+    """Return a blank justified paragraph ready for mixed runs."""
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p.paragraph_format.space_before = Pt(space_before)
+    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.line_spacing = Pt(18)
+    if indent:
+        p.paragraph_format.first_line_indent = Inches(0.3)
+    return p
 
-body("We offer our sincere pranams at the lotus feet of 'AMMA', Mata Amritanandamayi Devi, who "
-     "showered her blessings upon us throughout the course of this project work.")
+def _ar(p, text, bold=False, color=None):
+    r = p.add_run(text)
+    set_font(r, 12, bold=bold, color=color)
 
-body("We owe our gratitude to Prof. Manoj P., Director, Amrita Vishwa Vidyapeetham, Bengaluru "
-     "Campus. We would like to place our heartfelt gratitude to Dr. Gopalakrishnan E.A., "
-     "Principal, Amrita School of Computing and Amrita School of Artificial Intelligence, "
-     "Bengaluru, for his valuable support and inspiration.")
+# Para 1 – no indent
+p1 = _ack_para(indent=False)
+_ar(p1, "The satisfaction that accompanies successful completion of any task would be incomplete "
+        "without mention of people who made it possible, and whose constant encouragement and "
+        "guidance have been source of inspiration throughout the course of this project work.")
 
-body("It is a great pleasure to express our gratitude and indebtedness to our project guide, "
-     "Department of Computer Science and Engineering, Amrita School of Computing, Bengaluru, "
-     "for their invaluable guidance, encouragement, moral support, and affection throughout "
-     "the project work.")
+# Para 2 – AMMA bold
+p2 = _ack_para(indent=True)
+_ar(p2, "We offer our sincere pranams at the lotus feet of ")
+_ar(p2, "“AMMA”, MATA AMRITANANDAMAYI DEVI", bold=True)
+_ar(p2, " who showered her blessing upon us throughout the course of this project work.")
 
-body("We would like to express our gratitude to the project panel members for their suggestions, "
-     "encouragement, and moral support during the process of project work, and all faculty members "
-     "for their academic support. Finally, we are forever grateful to our parents, who have loved, "
-     "supported, and encouraged us in all our endeavours.")
+# Para 3 – Prof. Manoj P. and Dr. Gopalakrishnan E.A. bold
+p3 = _ack_para(indent=True)
+_ar(p3, "We owe our gratitude to ")
+_ar(p3, "Prof. Manoj P.", bold=True)
+_ar(p3, ", Director, Amrita Vishwa Vidyapeetham Bengaluru Campus.  We would like to place our "
+        "heartfelt gratitude to ")
+_ar(p3, "Dr. Gopalakrishnan E.A.", bold=True)
+_ar(p3, ", Principal, Amrita School of Computing and Amrita School of Artificial Intelligence, "
+        "Bengaluru for his valuable support and inspiration.")
 
-para("", space_after=24)
-p = doc.add_paragraph()
-p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-run = p.add_run("Dorai Sai Charan\nK. Nithin\nVijay\nDinesh")
-set_font(run, 12)
+# Para 4 – guide name and designation in red bold
+p4 = _ack_para(indent=True)
+_ar(p4, "It is a great pleasure to express our gratitude and indebtedness to our project guide ")
+_ar(p4, "Vishwas H.N, Assistant Professor(Sr. Gd.)", bold=True, color=_RED)
+_ar(p4, ", Department of Computer Science and Engineering, Amrita School of Computing, "
+        "Bengaluru for her/his valuable guidance, encouragement, moral support, and affection "
+        "throughout the project work.")
+
+# Para 5
+p5 = _ack_para(indent=True)
+_ar(p5, "We would like to express our gratitude to project panel members for their suggestions, "
+        "encouragement, and moral support during the process of project work and all faculty "
+        "members for their academic support.  Finally, we are forever grateful to our parents, "
+        "who have loved, supported, and encouraged us in all our endeavors.")
 
 # Roman numeral page marker
 p2 = doc.add_paragraph()
