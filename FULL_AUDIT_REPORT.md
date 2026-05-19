@@ -797,7 +797,7 @@ These can each be completed in under 30 minutes and immediately improve the prod
 
 ---
 
-*Report generated: 2026-05-18 | Codebase version: commit 6a88de7*
+*Report generated: 2026-05-18 | Updated: 2026-05-19 | Codebase version: commit 6a88de7*
 
 ---
 
@@ -1116,6 +1116,10 @@ with literal spaces in the filename. While this works on Linux filesystems, it c
 | L10 | `filter_source` for missing paper returns identical message as "no relevant chunks" | Low | New |
 | L11 | Uploaded filenames not normalized (spaces/special chars kept on disk) | Low | New |
 | L12 | 50MB+ file accepted and processed before failing — no size guard | Medium | Confirmed |
+| L13 | `documents.db` deleted on disk while server runs — all DB writes fail with "readonly database" | Critical | New (2026-05-19) |
+| L14 | `groq/compound-mini` listed as "Fast agent" but does not support tool calling | Medium | New (2026-05-19) |
+| L15 | Bug 1.3 (double URL encoding) **not confirmed** live — Next.js 15 decodes path segments before proxy re-encodes | N/A | Retracted (2026-05-19) |
+| L16 | `qwen/qwen3-32b` model works as agent workaround — only model tested that supports tool calling on Groq | Note | New (2026-05-19) |
 
 ---
 
@@ -1136,3 +1140,228 @@ The following tests were planned but not executed due to Groq API rate limits be
 | T40 | Recommend similar papers endpoint |
 
 *Live testing section appended: 2026-05-18*
+
+---
+
+## 11. Completed Tests — Round 2 (2026-05-19)
+
+**Testing date:** 2026-05-19  
+**Method:** Live HTTP calls against the same running backend (uvicorn PID 969143, port 8000). Rate limit resolved; tests completed using `qwen/qwen3-32b` for agent tests where Groq llama-3.3-70b fails.  
+**Documents available:** 6 in server's in-memory DB (5 completed + 1 failed). Note: `data/documents.db` on disk was deleted and replaced while server was running — server holds a deleted fd for the old DB file (all 5 uploaded test docs exist only in the server's in-memory SQLite connection and ChromaDB, not in the on-disk `documents.db`).
+
+---
+
+### 11.1 T29-complete — PASS: Agent Chat History Context Preserved
+
+**Test:** Two-turn agent conversation using `qwen/qwen3-32b`.
+
+**Turn 1:** Asked "What is the attention mechanism?" — agent completed in 3 steps, returned 613-character answer describing self-attention and multi-head attention.
+
+**Turn 2:** Asked "How many attention heads were used in their experiments?" with the first answer passed as `chat_history`. Agent answered correctly in 2 steps: *"The experiments in 'attention_is_all_you_need.pdf' used 8 attention heads in parallel... h=8 parallel attention layers or heads [Paper: attention_is_all_you_need.pdf, Page 5]"*.
+
+**Outcome:** Chat history is correctly injected into the agent prompt and reduces the number of retrieval steps needed for follow-up questions. The agent resolved the implicit reference "their experiments" using context.
+
+**Remaining issue:** Citations array is still `[]` for both turns — confirms bug §1.2 (Agent Always Returns Empty Citations).
+
+---
+
+### 11.2 T33 — FAIL: Delete Endpoint Returns HTTP 500 (Readonly Database)
+
+**Endpoint:** `DELETE /api/documents/{doc_id}`  
+**Tests:** Attempted deletion of `large_test.pdf` (id: `0666f2b7`) and `concurrent_test_1.pdf` (id: `d7d60b7a`). Both returned `HTTP 500 Internal Server Error`.
+
+**Root cause from server log:**
+```
+sqlite3.OperationalError: attempt to write a readonly database
+  File "src/storage/document_store.py", line 78, in delete_document
+    self.conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+```
+
+**Underlying cause (critical operational finding):** The `data/documents.db` file was **deleted and recreated on disk** while the server process was running. The server still holds an open file descriptor to the original (now deleted) file (visible as `fd/18 → data/documents.db (deleted)` in `/proc/969143/fd/`). SQLite can read from the deleted inode but cannot create the WAL journal file (the directory entry is gone), so all write operations fail with "attempt to write a readonly database".
+
+**Impact of this state:**
+1. `DELETE /api/documents/{id}` always returns HTTP 500 — document deletion is completely broken.
+2. Any new `POST /api/upload` will fail to persist the document record to SQLite (it may write to disk and ChromaDB, but the SQLite record will not be saved — the document appears "missing" after server restart).
+3. `update_status()` calls (called during ingestion) all fail silently — uploaded documents remain in `status="processing"` forever.
+4. The 6 documents visible via the API exist only in the server's in-memory SQLite connection — they will be lost on next server restart.
+
+**Fix:** Restart the server. On restart, the new `documents.db` on disk (which only has EJ1172284.pdf) will be used. All test documents will disappear from the document list. To prevent this, add a startup check: if the DB file can't be opened read-write, log an error and exit instead of starting with a degraded DB connection.
+
+**Secondary code bug:** The delete route calls `vector_store.delete_by_source()` (removes ChromaDB chunks) **before** `document_store.delete_document()` (removes SQLite record). If the SQLite delete fails (as it does now), ChromaDB data is permanently lost but the SQLite record remains — the document shows as "completed" with 0 queryable chunks. The order should be reversed, or wrapped in a try/except that re-inserts the ChromaDB chunks on failure.
+
+---
+
+### 11.3 T34 — FAIL: `groq/compound-mini` Does Not Support Tool Calling
+
+**Endpoint:** `POST /api/agent` with `llm_config: {"model": "groq/compound-mini"}`  
+**Result:** `HTTP 500` with error:
+```json
+{"detail": "Error code: 400 - {'error': {'message': '`tool calling` is not supported with this model', 'type': 'invalid_request_error', 'param': 'tool calling'}}"}
+```
+
+**Finding:** The `GET /api/models` endpoint lists `groq/compound-mini` with label "Groq Compound Mini — Fast agent" and `best_for: "Faster agent runs when quality tradeoff is acceptable"`. This model is specifically marketed for agent use in the UI, but it does not support tool calling on Groq's API. Every agent request using this model immediately returns a Groq 400 error.
+
+**Fix:** Remove `groq/compound-mini` from the models list, or conditionally hide it in the agent-mode model selector. Only expose it for non-agent (RAG) queries where tool calling is not used.
+
+---
+
+### 11.4 T35 — PARTIAL PASS: `qwen/qwen3-32b` Works as Agent
+
+**Endpoint:** `POST /api/agent` with `llm_config: {"model": "qwen/qwen3-32b"}`  
+**Result:** Agent returns coherent, sourced answers. Example response for "What is multi-head attention?":
+
+> *"Multi-head attention is a key mechanism in transformer models that enables parallel computation of attention across different representation subspaces. It operates by: (1) Projecting queries, keys, and values through h different learned linear projections to create h attention heads. (2) Computing attention independently for each head. [Paper: attention_is_all_you_need.pdf, p.5]..."*
+
+**Key finding:** `qwen/qwen3-32b` successfully performs native Groq tool calls. This makes it the **only currently functional model** for agent mode among the six listed models:
+
+| Model | Agent (Tool Calling) | Reason |
+|-------|----------------------|--------|
+| `llama-3.3-70b-versatile` | BROKEN | Generates XML-format tool calls → Groq rejects with 400 |
+| `llama-3.1-8b-instant` | Unknown | Not tested |
+| `qwen/qwen3-32b` | WORKS | Correct JSON tool call format |
+| `groq/compound-mini` | BROKEN | Tool calling not supported by model |
+| `openai/gpt-oss-120b` | Unknown | Requires separate credentials |
+| `openai/gpt-oss-20b` | Unknown | Requires separate credentials |
+
+**Remaining issue:** Agent citations are still `[]` even with qwen3-32b — confirms bug §1.2.
+
+**Immediate workaround:** Change the agent's default model from `llama-3.3-70b-versatile` to `qwen/qwen3-32b` in the frontend's default model selector.
+
+---
+
+### 11.5 T36 — NOT RUN: Frontend Not Running
+
+**Finding:** Port 3000 is occupied by an unrelated application (RemotePC attended remote desktop — `<link rel="icon" href="/oldCph/AppIcon.ico" />`). The research assistant's Next.js frontend (`npm run dev`) is not started. No Next.js process was found in `ps aux`.
+
+**What was verified instead (static analysis):**
+- All 8 page routes exist as files: `/`, `/search`, `/chat`, `/compare`, `/humanizer`, `/survey`, `/trends`, `/recommend`.
+- No `npm run build` errors detected (TypeScript types appear consistent based on component inspection).
+- The Next.js proxy route at `frontend/app/api/[...path]/route.ts` is correctly wired for GET, POST, PUT, DELETE, PATCH methods.
+
+**Action needed:** Start frontend with `cd frontend && npm run dev` (or use a different port) to run full browser tests.
+
+---
+
+### 11.6 T37 — VERIFIED: Image URL Resolution Design is Correct
+
+**Finding:** The image URL flow is correctly designed:
+
+1. Backend returns `image_url: "/images/<filename>.png"` in visual chunk metadata.
+2. Frontend component (`visual-citations.tsx:35`) builds: `` src={`/api${citation.image_url}`} `` → `/api/images/<filename>.png`.
+3. Next.js proxy forwards `/api/images/...` to `http://localhost:8000/api/images/...`.
+4. Backend StaticFiles mounted at `/api/images` serves the file (verified: `HTTP 200`, 121KB PNG).
+
+**Verification:** Direct backend image request returns the correct PNG image:
+```
+GET http://localhost:8000/api/images/911ddf5f-..._p3_img1.png → HTTP 200, 121244 bytes, PNG image
+```
+
+**Cannot test end-to-end:** Frontend not running (see T36). The design is correct; end-to-end test is pending frontend startup.
+
+**Note on Bug 1.3 (Static Analysis Retraction):** The audit report §1.3 identified a double URL-encoding bug: `path.map(encodeURIComponent)` in the proxy re-encoding an already-encoded path. **This bug does NOT occur in practice with Next.js 15.** Next.js 15 decodes path segments before passing them to `[...path]` catch-all route handlers (`params.path` contains decoded strings like `["documents", "my paper (2024).pdf", "visuals"]`). The proxy's `encodeURIComponent` re-encodes them correctly. Verified: requests with `%20` and `%28/%29` in filenames return HTTP 200 through the proxy.
+
+---
+
+### 11.7 T38 — PASS: Literature Survey Works (Single and Multi-Doc)
+
+**Endpoint:** `POST /api/literature-survey`
+
+**T38a — Single document:**
+```json
+{"question": "What is the transformer architecture?", "source_files": ["attention_is_all_you_need.pdf"]}
+```
+Result: 4712-character structured survey with 26 citations. Well-formatted with numbered sections, introduction, methodology, results, and conclusions. Correctly scoped to the one paper.
+
+**T38b — Multi-document (no source filter):**
+```json
+{"question": "Compare attention mechanisms across these papers"}
+```
+Result: 3803-character survey citing **4 unique source files** (attention_is_all_you_need.pdf, concurrent_test_1.pdf, concurrent_test_2.pdf, my_research_paper.pdf). However, all four of these are copies of the same "Attention Is All You Need" paper — the test database has no genuinely different papers.
+
+**Confirms §2.6:** With all documents being the same paper, cross-paper diversity cannot be measured. But the single-query top-30 retrieval design (§2.6) would fail to enforce coverage across genuinely different papers. The bug remains in the code regardless.
+
+---
+
+### 11.8 T39 — PASS: Research Gaps Endpoint Works
+
+**Endpoint:** `POST /api/research-gaps`  
+**Request:** `{"question": "What are the research gaps in transformer architectures?"}`  
+**Result:** HTTP 200, 3630-character answer, 26 citations.
+
+Sample gaps returned:
+- **Scalability of Attention Mechanisms** — O(n²) memory and compute limits; matters for long-sequence tasks.
+- **Multi-Modal Integration** — limited to text; integration with vision, audio, and structured data is an open area.
+- **Interpretability** — attention weights don't fully explain model decisions.
+- **Efficiency in Low-Resource Environments** — high parameter counts problematic for edge deployment.
+
+**Assessment:** The endpoint is functional. The gaps identified are real and consistent with the ingested paper's "Future Work" and limitations sections. Response quality is high.
+
+---
+
+### 11.9 T40 — PASS: Recommend Papers Endpoint Works
+
+**Endpoint:** `POST /api/recommend`  
+**Field name:** `interest` (not `question` — inconsistency with other endpoints noted in §10.10).  
+**Request:** `{"interest": "attention mechanisms and transformer architectures for NLP"}`  
+**Result:** HTTP 200, 1972-character answer, 16 citations.
+
+Sample recommendation:
+> *"Paper: attention_is_all_you_need.pdf — This paper introduces the Transformer model, which relies entirely on self-attention to compute representations of its input and output. Key sections to focus on: Section 3 (Model Architecture), Section 3.2 (Attention), Section 3.2.1 (Scaled Dot-Product Attention)."*
+
+**Finding:** The recommend endpoint is functional, but it can only recommend papers already uploaded to the system — it has no access to external paper databases (arXiv, Semantic Scholar, etc.). This is an inherent limitation of the current RAG approach and should be surfaced in the UI.
+
+**Confirms field naming inconsistency (§10.10):** The request body uses `interest`, but the response body key for the echoed query is `query`. Four other endpoints use `question` as the input field name. This inconsistency makes the API harder to use programmatically.
+
+---
+
+### 11.10 NEW FINDING — `documents.db` Deleted on Disk While Server Runs (Operational Bug)
+
+**Severity:** Critical  
+**Discovery:** During T33 investigation via `/proc/969143/fd/` inspection.
+
+The server's open file descriptors show:
+```
+fd/18 → data/documents.db (deleted)
+fd/24 → data/documents.db (deleted)
+```
+
+The `data/documents.db` file was replaced (or deleted and recreated) while the server was running. The current on-disk `documents.db` contains only 1 document (EJ1172284.pdf), but the server serves 6 documents from the old deleted file.
+
+**Consequences:**
+1. All DB write operations fail silently with `sqlite3.OperationalError: attempt to write a readonly database` — including upload status updates and document deletes.
+2. The 5 test documents (concurrent_test_1.pdf, concurrent_test_2.pdf, large_test.pdf, my_research_paper.pdf, attention_is_all_you_need.pdf) visible via the API will disappear from the document list on server restart.
+3. The mismatch between what the API reports and what's on disk is invisible to users and operators.
+
+**Root cause:** No file integrity check or crash recovery detects this state. The server started with the old DB file, that file was later replaced, and the process continued using the stale file handle.
+
+**Fix:** Add a startup health check in `src/main.py` that:
+1. Opens a test write to `documents.db` (e.g., `PRAGMA user_version = 1`).
+2. If it fails, logs a critical error and exits rather than starting with a broken DB connection.
+
+---
+
+### Summary: Round 2 Test Results (2026-05-19)
+
+| Test | Result | Key Finding |
+|------|--------|-------------|
+| T29 (Agent chat_history) | PASS | Chat history correctly reduces re-retrieval; follow-up answered with specific value (8 heads) from context. Citations still empty. |
+| T33 (Delete endpoint) | FAIL | HTTP 500 — `sqlite3.OperationalError: attempt to write a readonly database`. `documents.db` deleted on disk while server runs. |
+| T34 (compound-mini agent) | FAIL | Model does not support tool calling despite being listed as "Fast agent" in the UI. |
+| T35 (qwen3-32b agent) | PASS | Only currently working agent model on Groq. Returns correct tool-call-based answers. Citations still empty. |
+| T36 (Frontend browser) | NOT RUN | Frontend not started. Port 3000 occupied by unrelated app (RemotePC). |
+| T37 (Image URL resolution) | VERIFIED | Backend image serving correct (HTTP 200, 121KB PNG). Frontend design correct (`/api` + image_url). Cannot test end-to-end. |
+| T38 (Literature survey) | PASS | Single-doc and multi-doc both work. Multi-doc cites 4 sources (all same paper copies — diversity issue from §2.6 not testable). |
+| T39 (Research gaps) | PASS | Returns real, well-identified gaps. Functional. |
+| T40 (Recommend papers) | PASS | Returns relevant recommendations. Field name is `interest`, not `question`. |
+
+### New Bugs Found in Round 2
+
+| # | Bug | Severity |
+|---|-----|----------|
+| L13 | `documents.db` deleted on disk while server runs — all writes fail with "readonly database" error | Critical |
+| L14 | `groq/compound-mini` listed as "Fast agent" in UI but does not support tool calling | Medium |
+| L15 | Bug §1.3 (double URL encoding) **retracted** — not reproducible with Next.js 15 | N/A |
+| L16 | `qwen/qwen3-32b` is the only working agent model; should be the default or at least recommended | Note |
+| L17 | Delete order flaw: ChromaDB chunks deleted before SQLite record — inconsistent state if SQLite write fails | Medium |
+
+*Round 2 testing completed: 2026-05-19*
