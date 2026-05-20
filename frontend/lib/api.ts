@@ -272,6 +272,64 @@ export async function explainVisual(payload: {
   );
 }
 
+// ---------------- Streaming RAG ----------------
+
+/**
+ * Stream a RAG answer token by token via Server-Sent Events.
+ *
+ * Calls POST /api/query/stream and reads the SSE response, invoking
+ * ``onToken`` for each text chunk and ``onDone`` when the stream ends.
+ * Pass an ``AbortSignal`` to cancel mid-stream.
+ */
+export async function queryStream(
+  question: string,
+  filterSource: string | null,
+  onToken: (token: string) => void,
+  onDone: () => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${BASE}/query/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, filter_source: filterSource, top_k: 10 }),
+    signal,
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const data = await response.json();
+      detail = data.detail ?? detail;
+    } catch {}
+    throw new ApiError(detail, response.status);
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    for (const line of text.split("\n")) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") {
+          onDone();
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.token) onToken(parsed.token);
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
+  }
+  onDone();
+}
+
 // ---------------- Humanizer ----------------
 
 export async function detectAI(

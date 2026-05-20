@@ -79,6 +79,7 @@ interface AppState {
   // Chat
   messages: ChatMessage[];
   pushMessage: (m: ChatMessage) => void;
+  updateMessage: (id: string, patch: Partial<ChatMessage>) => void;
   clearMessages: () => void;
 
   // Chat mode
@@ -135,6 +136,12 @@ export const useAppStore = create<AppState>()(
 
       messages: [],
       pushMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+      updateMessage: (id, patch) =>
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === id ? { ...m, ...patch } : m,
+          ),
+        })),
       clearMessages: () => set({ messages: [] }),
 
       agentMode: false,

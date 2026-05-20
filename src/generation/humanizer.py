@@ -67,6 +67,17 @@ def compute_metrics(text: str) -> dict:
     has_contractions = bool(re.search(r"\b\w+'(s|t|re|ve|ll|d|m)\b", text, re.IGNORECASE))
     human_markers = sum([has_em_dash, has_parenthetical, starts_with_but_and > 0, has_contractions])
 
+    # Transition word density — high density of academic transitions inflates AI probability
+    _TRANSITIONS = [
+        "furthermore", "moreover", "additionally", "in conclusion",
+        "it is worth noting", "it should be noted", "consequently",
+        "therefore", "thus", "hence", "in summary", "to summarize",
+        "in addition", "as a result", "this suggests", "this indicates",
+    ]
+    text_lower_for_transitions = text.lower()
+    transition_hits = sum(text_lower_for_transitions.count(t) for t in _TRANSITIONS)
+    transition_density = transition_hits / (word_count / 100) if word_count > 0 else 0  # per 100 words
+
     return {
         "word_count": word_count,
         "sentence_count": sentence_count,
@@ -79,6 +90,7 @@ def compute_metrics(text: str) -> dict:
         "has_parenthetical": has_parenthetical,
         "starts_with_but_and": starts_with_but_and,
         "has_contractions": has_contractions,
+        "transition_density": round(transition_density, 2),
     }
 
 
@@ -101,14 +113,23 @@ def heuristic_ai_score(m: dict) -> float:
     else:
         score -= 8
 
+    # Sentence length uniformity: very low std_dev is a strong AI signal
+    std_dev = m.get("std_dev", 0)
+    if std_dev < 3:
+        score += 15  # nearly identical sentence lengths → AI
+    elif std_dev < 5:
+        score += 7
+
     # Average sentence length — AI clusters around 20-25 words
     if 19 <= m["avg_sentence_length"] <= 26:
         score += 12
     elif m["avg_sentence_length"] < 12 or m["avg_sentence_length"] > 30:
         score -= 10
 
-    # Type-token ratio — too uniform vocabulary = AI
-    if m["ttr"] < 0.45:
+    # Type-token ratio (lexical diversity) — very low TTR = AI
+    if m["ttr"] < 0.4:
+        score += 18  # very low diversity
+    elif m["ttr"] < 0.45:
         score += 10
     elif m["ttr"] > 0.7:
         score -= 15
@@ -117,6 +138,13 @@ def heuristic_ai_score(m: dict) -> float:
 
     # Human markers - strong indicator
     score -= m["human_markers"] * 8
+
+    # Transition word density — very high density indicates AI over-reliance on connectors
+    transition_density = m.get("transition_density", 0)
+    if transition_density > 3:
+        score += 15  # extremely dense academic transitions
+    elif transition_density > 1.5:
+        score += 8
 
     return max(0, min(100, round(score)))
 
@@ -163,6 +191,16 @@ CRITICAL RULES — follow ALL strictly:
 6. **PRESERVE**: All facts, citations [#], numbers, technical terms, references.
 
 7. **TONE**: Scholarly but natural. Suitable for IEEE papers - professional yet human.
+
+CRITICAL REQUIREMENTS FOR HUMANIZATION:
+- Vary sentence lengths dramatically: mix very short sentences (4-6 words) with longer ones (20-30 words)
+- Use contractions naturally: "don't", "it's", "we've", "they're"
+- Add occasional first-person perspective where appropriate
+- Break up strings of similarly-structured sentences
+- Include a personal or conversational aside occasionally
+- Avoid starting multiple consecutive sentences with the same word
+- Use informal connectors occasionally: "But", "So", "Yet", "Still"
+- Mix active and passive voice unpredictably
 
 TEXT TO REWRITE:
 {text}
@@ -230,8 +268,11 @@ class HumanizationEngine:
         heuristic = heuristic_ai_score(metrics)
         roberta_score = self._roberta_detect(text)
 
-        # Blend: 60% heuristic + 40% RoBERTa
-        blended = round(heuristic * 0.6 + roberta_score * 0.4)
+        # Blend: 70% heuristic (reliable) + 30% RoBERTa
+        # Heuristic dominates because RoBERTa is unreliable for modern LLM output.
+        raw_blended = heuristic * 0.7 + roberta_score * 0.3
+        # Cap to avoid false certainty at the extremes (5%–95%)
+        blended = round(max(5.0, min(95.0, raw_blended)))
         confidence = 0.85 if metrics and metrics["word_count"] >= 50 else 0.6
 
         explanation = self._build_explanation(blended, metrics, heuristic, roberta_score)
@@ -330,7 +371,7 @@ class HumanizationEngine:
         original_metrics = compute_metrics(text)
         original_heuristic = heuristic_ai_score(original_metrics)
         original_roberta = self._roberta_detect(text)
-        original_blended = round(original_heuristic * 0.6 + original_roberta * 0.4)
+        original_blended = round(max(5.0, min(95.0, original_heuristic * 0.7 + original_roberta * 0.3)))
 
         best_text = text
         best_score = original_blended
@@ -366,7 +407,7 @@ class HumanizationEngine:
                 new_metrics = compute_metrics(humanized_text)
                 new_heuristic = heuristic_ai_score(new_metrics)
                 new_roberta = self._roberta_detect(humanized_text)
-                new_blended = round(new_heuristic * 0.6 + new_roberta * 0.4)
+                new_blended = round(max(5.0, min(95.0, new_heuristic * 0.7 + new_roberta * 0.3)))
 
                 logger.info(f"Pass {attempt}: {original_blended}% -> {new_blended}% (heuristic={new_heuristic}%, roberta={new_roberta:.0f}%)")
 

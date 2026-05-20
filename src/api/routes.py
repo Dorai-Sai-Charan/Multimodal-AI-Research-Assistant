@@ -4,12 +4,15 @@ Covers all 20 system features via dedicated endpoints.
 """
 
 import os
+import re
+import json
 import asyncio
 import shutil
 import tempfile
 import logging
 import threading
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.ingestion.pipeline import IngestionPipeline
@@ -89,6 +92,7 @@ class QueryRequest(TunableRequest):
     question: str
     top_k: int = 10
     filter_source: str | None = None
+    chat_history: list[dict] | None = None
 
 
 class AgentQueryRequest(TunableRequest):
@@ -138,7 +142,7 @@ class MultiDocRequest(TunableRequest):
 class QueryResponse(BaseModel):
     answer: str
     citations: list[dict]
-    query: str
+    question: str
     intent: str
     chunks_used: int
 
@@ -146,7 +150,7 @@ class QueryResponse(BaseModel):
 class AgentQueryResponse(BaseModel):
     answer: str
     citations: list[dict]
-    query: str
+    question: str
     intent: str
     chunks_used: int
     reasoning_steps: list[dict]
@@ -179,7 +183,7 @@ def _to_query_response(resp) -> QueryResponse:
     return QueryResponse(
         answer=resp.answer,
         citations=resp.citations,
-        query=resp.query,
+        question=resp.question,
         intent=resp.intent,
         chunks_used=resp.chunks_used,
     )
@@ -230,6 +234,9 @@ async def upload_document(file: UploadFile = File(...)):
 
         # Fix 1: sanitize filename to prevent path traversal attacks
         safe_name = os.path.basename(file.filename)
+        # Fix 4 (L11): normalize spaces and special characters in filename
+        safe_name = re.sub(r'[^\w\-_\.]', '_', safe_name)
+        safe_name = re.sub(r'_+', '_', safe_name)  # collapse multiple underscores
         saved_path = os.path.join(tmp_dir, safe_name)
 
         # Fix 2: enforce 50 MB file size limit
@@ -390,6 +397,8 @@ async def query_documents(request: QueryRequest):
     """Answer a question using single-shot RAG."""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if len(request.question) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
 
     # Fix 6: validate filter_source before running the query
     if request.filter_source:
@@ -410,12 +419,75 @@ async def query_documents(request: QueryRequest):
                 question=request.question,
                 top_k=request.top_k,
                 filter_source=request.filter_source,
+                chat_history=request.chat_history,
                 **_llm_kwargs(request),
             )
         )
     except Exception as e:
         logger.error(f"Query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/query/stream")
+async def query_documents_stream(request: QueryRequest):
+    """
+    Answer a question using single-shot RAG with Server-Sent Events streaming.
+
+    Tokens are emitted progressively as ``data: {"token": "..."}`` lines so the
+    frontend can render the answer in real time instead of waiting for the full
+    response.  The stream is terminated with ``data: [DONE]``.
+    """
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if len(request.question) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+
+    if request.filter_source:
+        all_docs = get_ingestion_pipeline().get_all_documents()
+        known_sources = {d.filename for d in all_docs}
+        if request.filter_source not in known_sources:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No document with source '{request.filter_source}' found. "
+                    "Please check the filename."
+                ),
+            )
+
+    rag_pipeline = get_rag_pipeline()
+
+    try:
+        llm_config = (
+            request.llm_config.model_dump(exclude_none=True)
+            if request.llm_config else None
+        )
+        prompt, _ = rag_pipeline.build_query_prompt(
+            question=request.question,
+            top_k=request.top_k,
+            filter_source=request.filter_source,
+            similarity_threshold=request.similarity_threshold,
+        )
+    except Exception as e:
+        logger.error(f"Streaming query prompt build failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    async def event_generator():
+        try:
+            for token in rag_pipeline.llm_client.generate_stream(prompt, llm_config=llm_config):
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        except Exception as exc:
+            logger.error(f"Streaming generation error: {exc}")
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/agent", response_model=AgentQueryResponse)
@@ -426,6 +498,8 @@ async def agent_query(request: AgentQueryRequest):
     """
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if len(request.question) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         # Fix 4: agent.run() is synchronous — run it in a thread pool so it
         # does not block the event loop while waiting on Groq responses.
@@ -445,7 +519,7 @@ async def agent_query(request: AgentQueryRequest):
         return AgentQueryResponse(
             answer=resp.answer,
             citations=resp.citations,
-            query=resp.query,
+            question=resp.question,
             intent=resp.intent,
             chunks_used=resp.chunks_used,
             reasoning_steps=[
@@ -486,6 +560,10 @@ async def compare_papers(request: CompareRequest):
     """Compare two research papers side-by-side."""
     if not request.paper1 or not request.paper2:
         raise HTTPException(status_code=400, detail="Both paper1 and paper2 are required")
+    if len(request.paper1) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    if len(request.paper2) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         return _to_query_response(
             get_rag_pipeline().compare(
@@ -500,6 +578,8 @@ async def compare_papers(request: CompareRequest):
 @router.post("/literature-survey", response_model=QueryResponse)
 async def literature_survey(request: LiteratureSurveyRequest):
     """Generate a literature survey from the uploaded papers."""
+    if request.topic and len(request.topic) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         return _to_query_response(
             get_rag_pipeline().literature_survey(
@@ -532,6 +612,8 @@ async def explain_concept(request: ExplainRequest):
     """Explain a technical concept, diagram, or table found in the papers."""
     if not request.concept.strip():
         raise HTTPException(status_code=400, detail="Concept cannot be empty")
+    if len(request.concept) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         return _to_query_response(
             get_rag_pipeline().explain(
@@ -696,7 +778,7 @@ async def explain_visual(request: ExplainVisualRequest):
         return {
             "answer": explanation,
             "citations": [citation],
-            "query": f"Explain {element_type} on page {page_number}",
+            "question": f"Explain {element_type} on page {page_number}",
             "intent": "explain_visual",
             "chunks_used": 1 + len(context_chunks),
         }
@@ -713,6 +795,8 @@ async def recommend_papers(request: RecommendRequest):
     """Recommend papers based on a research interest."""
     if not request.interest.strip():
         raise HTTPException(status_code=400, detail="Interest cannot be empty")
+    if len(request.interest) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         return _to_query_response(
             get_rag_pipeline().recommend(
@@ -743,6 +827,8 @@ async def multi_doc_query(request: MultiDocRequest):
     """Answer a question by reasoning across multiple papers simultaneously."""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if len(request.question) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     try:
         return _to_query_response(
             get_rag_pipeline().multi_doc_query(
@@ -768,6 +854,8 @@ async def detect_ai(request: TextAnalysisRequest):
     """
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
+    if len(request.text) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
 
     try:
         logger.info(f"Detecting AI content in text ({len(request.text)} chars)")
@@ -786,6 +874,8 @@ async def humanize_text(request: TextAnalysisRequest):
     """
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
+    if len(request.text) > 2000:
+        raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
 
     try:
         logger.info(f"Humanizing text ({len(request.text)} chars)")
@@ -816,6 +906,8 @@ AVAILABLE_MODELS = [
         "family": "OpenAI",
         "best_for": "Deep reasoning, literature surveys, complex multi-hop questions",
         "supports_reasoning_effort": True,
+        "requires_additional_setup": True,
+        "note": "Requires separate OpenAI credentials — not configured",
     },
     {
         "id": "openai/gpt-oss-20b",
@@ -823,6 +915,8 @@ AVAILABLE_MODELS = [
         "family": "OpenAI",
         "best_for": "Quick Q&A with good reasoning when latency matters",
         "supports_reasoning_effort": True,
+        "requires_additional_setup": True,
+        "note": "Requires separate OpenAI credentials — not configured",
     },
     {
         "id": "llama-3.3-70b-versatile",

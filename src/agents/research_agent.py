@@ -13,6 +13,7 @@ import re
 import json
 import logging
 from src.agents.tools import AgentTools
+from src.agents.agent_memory import AgentMemory
 from src.generation.llm_client import LLMClient
 from src.generation.prompts import AGENT_PROMPT
 from src.models.schemas import AgentStep, AgentResponse
@@ -36,6 +37,7 @@ class ResearchAgent:
     def __init__(self):
         self.llm = LLMClient()
         self.tools = AgentTools()
+        self.memory = AgentMemory()
         self._tool_map = {
             "search_text": self.tools.search_text,
             "search_tables": self.tools.search_tables,
@@ -164,18 +166,30 @@ class ResearchAgent:
             AgentResponse with the final answer and full reasoning trace.
         """
         history_text = self._format_history(chat_history or [])
-        
+
+        # ---- Cross-session memory: prepend relevant past findings ----------
+        memory_context = ""
+        try:
+            raw_memory = self.memory.get_summary(limit=8)
+            if raw_memory:
+                # Cap at 2000 chars to avoid consuming too many tokens
+                memory_context = raw_memory[:2000]
+        except Exception as mem_exc:
+            logger.warning("AgentMemory retrieval failed: %s", mem_exc)
+
         # Inject focus paper context if provided
         focus_info = ""
         if filter_source:
             focus_info = f"\n[CONTEXT] The user is currently focused on the paper: {filter_source}. Refer to this paper when the user says 'this paper' or 'this document'.\n"
-            
+
         prompt = AGENT_PROMPT.format(
-            question=question, 
-            history=history_text
+            question=question,
+            history=history_text,
         )
         if focus_info:
             prompt = focus_info + prompt
+        if memory_context:
+            prompt = memory_context + "\n\n" + prompt
 
         steps: list[AgentStep] = []
         all_observation_text = ""
@@ -199,7 +213,7 @@ class ResearchAgent:
                 logger.warning(f"Unexpected string response: {response_msg}")
                 return AgentResponse(
                     answer=response_msg,
-                    query=question,
+                    question=question,
                     intent="multi_hop_qa",
                 )
 
@@ -233,7 +247,7 @@ class ResearchAgent:
                         answer=thought,
                         reasoning_steps=steps,
                         citations=citations_list,
-                        query=question,
+                        question=question,
                         intent="multi_hop_qa",
                         chunks_used=len(steps),
                         total_steps=len(steps),
@@ -242,11 +256,20 @@ class ResearchAgent:
             # ---- handle finish action ---------------------------------------
             if action.lower() == "finish":
                 final_answer = action_input.get("answer", thought)
+                # Store the main finding as a cross-session memory
+                if final_answer and len(final_answer) > 50:
+                    try:
+                        self.memory.store(
+                            session_id=question[:50],
+                            key_fact=final_answer[:300],
+                        )
+                    except Exception as mem_exc:
+                        logger.warning("AgentMemory store failed: %s", mem_exc)
                 return AgentResponse(
                     answer=final_answer,
                     reasoning_steps=steps,
                     citations=citations_list,
-                    query=question,
+                    question=question,
                     intent="multi_hop_qa",
                     chunks_used=len(steps),
                     total_steps=len(steps),
@@ -315,7 +338,7 @@ class ResearchAgent:
             answer=answer,
             reasoning_steps=steps,
             citations=citations_list,
-            query=question,
+            question=question,
             intent="multi_hop_qa",
             chunks_used=len(steps),
             total_steps=len(steps),

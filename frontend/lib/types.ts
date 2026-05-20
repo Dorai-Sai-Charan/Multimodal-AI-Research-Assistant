@@ -89,6 +89,7 @@ export interface ChatMessage {
   total_steps?: number;
   mode?: "rag" | "agent" | "multi-doc";
   error?: boolean;
+  isStreaming?: boolean;
 }
 
 export interface AIDetectionResponse {

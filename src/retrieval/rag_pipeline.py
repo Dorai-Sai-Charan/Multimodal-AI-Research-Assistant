@@ -49,12 +49,43 @@ class RAGPipeline:
         filter_source: str | None = None,
         llm_config: dict | None = None,
         similarity_threshold: float | None = None,
+        chat_history: list[dict] | None = None,
     ) -> GenerationResponse:
-        """Answer a question using retrieved context."""
+        """Answer a question using retrieved context.
+
+        Fix 9 (2.10): If chat_history has at least 2 entries, rewrite the
+        question as a standalone question using the last 2 turns before
+        retrieval so the retriever can find the right chunks.
+        """
         logger.info(f"RAG query: '{question[:80]}'")
 
+        retrieval_question = question
+
+        # Fix 9: chat history — rewrite question as standalone if history present
+        if chat_history and len(chat_history) >= 2:
+            last_two = chat_history[-2:]
+            history_text = "\n".join(
+                f"{turn.get('role', 'user').capitalize()}: {turn.get('content', '')}"
+                for turn in last_two
+            )
+            rewrite_prompt = (
+                f"Given this conversation history:\n{history_text}\n\n"
+                f"Rephrase the following question as a standalone question "
+                f"that can be understood without the conversation history. "
+                f"Return only the rephrased question, nothing else.\n\n"
+                f"Question: {question}"
+            )
+            try:
+                retrieval_question = self.llm_client.generate(
+                    rewrite_prompt, temperature=0.0, max_tokens=200
+                ).strip()
+                logger.info(f"Rewrote question to: '{retrieval_question[:80]}'")
+            except Exception as e:
+                logger.warning(f"Query rewriting failed, using original question: {e}")
+                retrieval_question = question
+
         results = self.retriever.retrieve(
-            query=question,
+            query=retrieval_question,
             top_k=top_k,
             filter_source=filter_source,
             similarity_threshold=similarity_threshold,
@@ -67,7 +98,7 @@ class RAGPipeline:
                     "Please rephrase your question or upload relevant papers."
                 ),
                 citations=[],
-                query=question,
+                question=question,
                 intent="question_answering",
                 chunks_used=0,
             )
@@ -80,10 +111,43 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=question,
+            question=question,
             intent="question_answering",
             chunks_used=len(results),
         )
+
+    def build_query_prompt(
+        self,
+        question: str,
+        top_k: int = 10,
+        filter_source: str | None = None,
+        similarity_threshold: float | None = None,
+    ) -> tuple[str, list]:
+        """
+        Perform retrieval and build the final QA prompt string without calling
+        the LLM.  Returns ``(prompt_string, results_list)`` so the streaming
+        endpoint can pass the prompt directly to ``generate_stream()``.
+        """
+        logger.info(f"Building query prompt for: '{question[:80]}'")
+
+        results = self.retriever.retrieve(
+            query=question,
+            top_k=top_k,
+            filter_source=filter_source,
+            similarity_threshold=similarity_threshold,
+        )
+
+        if not results:
+            # Return a prompt that will produce the "no info found" message
+            no_context_prompt = QA_PROMPT.format(
+                context="(No relevant documents found.)",
+                question=question,
+            )
+            return no_context_prompt, []
+
+        context = self.retriever.build_context(results)
+        prompt = QA_PROMPT.format(context=context, question=question)
+        return prompt, results
 
     # ------------------------------------------------------------------
     # 2. Summarization
@@ -96,8 +160,19 @@ class RAGPipeline:
         llm_config: dict | None = None,
         similarity_threshold: float | None = None,
     ) -> GenerationResponse:
-        """Summarize a specific paper or all uploaded papers."""
-        query = "main contributions methodology results conclusions abstract"
+        """Summarize a specific paper or all uploaded papers.
+
+        Fix 8 (2.9): Build an adaptive retrieval query by first fetching early
+        chunks (chunk_index == 0) to extract title/abstract keywords, then use
+        those keywords as the retrieval query.  Falls back to the generic query
+        string when no early chunks are found or keyword extraction fails.
+        """
+        # Fix 8: adaptive query — extract keywords from early chunks
+        query = self._build_adaptive_summary_query(
+            source_file=source_file,
+            fallback="main contributions methodology results conclusions abstract",
+        )
+
         results = self.retriever.retrieve(
             query=query,
             top_k=top_k,
@@ -120,10 +195,58 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=f"Summarize: {source_file or 'all documents'}",
+            question=f"Summarize: {source_file or 'all documents'}",
             intent="summarization",
             chunks_used=len(results),
         )
+
+    def _build_adaptive_summary_query(
+        self,
+        source_file: str | None,
+        fallback: str,
+    ) -> str:
+        """
+        Fix 8 (2.9): Return a query derived from the earliest chunks of the
+        document, or ``fallback`` if that is not possible.
+        """
+        try:
+            vs = self.retriever.vector_store
+            where: dict = {"chunk_index": {"$eq": 0}}
+            if source_file:
+                where = {"$and": [{"source_file": source_file}, {"chunk_index": {"$eq": 0}}]}
+
+            early = vs.collection.get(
+                where=where,
+                include=["documents"],
+            )
+            docs = early.get("documents") or []
+            if not docs:
+                return fallback
+
+            # Take up to the first two early chunks and extract key noun phrases
+            sample_text = " ".join(d[:400] for d in docs[:2])
+            # Simple keyword extraction: take words longer than 5 chars, deduplicated
+            words = [
+                w.strip(".,;:\"'()[]") for w in sample_text.split()
+                if len(w.strip(".,;:\"'()[]")) > 5
+            ]
+            seen: set[str] = set()
+            keywords: list[str] = []
+            for w in words:
+                lw = w.lower()
+                if lw not in seen:
+                    seen.add(lw)
+                    keywords.append(w)
+                if len(keywords) >= 15:
+                    break
+
+            if not keywords:
+                return fallback
+
+            return " ".join(keywords)
+        except Exception as e:
+            logger.warning(f"Adaptive summary query extraction failed: {e}")
+            return fallback
 
     # ------------------------------------------------------------------
     # 3. Paper Comparison
@@ -171,7 +294,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results_a + results_b),
-            query=f"Compare: {paper1} vs {paper2}",
+            question=f"Compare: {paper1} vs {paper2}",
             intent="comparison",
             chunks_used=len(results_a) + len(results_b),
         )
@@ -187,13 +310,47 @@ class RAGPipeline:
         llm_config: dict | None = None,
         similarity_threshold: float | None = None,
     ) -> GenerationResponse:
-        """Generate a literature survey from the uploaded papers."""
+        """Generate a literature survey from the uploaded papers.
+
+        Fix 7 (2.6): Instead of a single broad top_k query, retrieve up to 6
+        chunks per available paper independently, then merge and pass all to
+        the LLM.  Falls back to the original strategy when no source list can
+        be obtained.
+        """
         logger.info(f"Literature survey on topic: '{topic or 'general'}'")
 
         query = topic if topic else "contributions methodology evaluation results"
-        results = self.retriever.retrieve(
-            query=query, top_k=top_k, similarity_threshold=similarity_threshold
-        )
+
+        # Fix 7: per-paper retrieval for diversity
+        try:
+            source_files = self.retriever.vector_store.get_all_sources()
+        except Exception as e:
+            logger.warning(f"Could not retrieve source list for per-paper survey: {e}")
+            source_files = []
+
+        if source_files:
+            all_results: list = []
+            seen_ids: set[str] = set()
+            for source in source_files:
+                per_paper = self.retriever.retrieve(
+                    query=query,
+                    top_k=6,
+                    filter_source=source,
+                    similarity_threshold=similarity_threshold,
+                )
+                for r in per_paper:
+                    if r.chunk.id not in seen_ids:
+                        all_results.append(r)
+                        seen_ids.add(r.chunk.id)
+
+            # Sort by relevance score descending
+            all_results.sort(key=lambda r: r.score, reverse=True)
+            results = all_results
+        else:
+            # Fallback to original single-query approach
+            results = self.retriever.retrieve(
+                query=query, top_k=top_k, similarity_threshold=similarity_threshold
+            )
 
         if not results:
             return GenerationResponse(
@@ -213,7 +370,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=f"Literature survey: {topic or 'all papers'}",
+            question=f"Literature survey: {topic or 'all papers'}",
             intent="literature_survey",
             chunks_used=len(results),
         )
@@ -264,7 +421,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(all_results),
-            query="Research gap identification",
+            question="Research gap identification",
             intent="research_gaps",
             chunks_used=len(all_results),
         )
@@ -306,7 +463,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=f"Explain: {concept}",
+            question=f"Explain: {concept}",
             intent="concept_explanation",
             chunks_used=len(results),
         )
@@ -347,7 +504,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=f"Recommend for: {interest}",
+            question=f"Recommend for: {interest}",
             intent="recommendation",
             chunks_used=len(results),
         )
@@ -396,7 +553,7 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(all_results),
-            query="Research trend analysis",
+            question="Research trend analysis",
             intent="trend_analysis",
             chunks_used=len(all_results),
         )
@@ -414,7 +571,10 @@ class RAGPipeline:
     ) -> GenerationResponse:
         """
         Answer a question by synthesising information across multiple papers.
-        Retrieves broadly (no source filter) to ensure multi-paper coverage.
+
+        Fix 6 (2.5): Enforce multi-paper coverage — if more than 80 % of the
+        initial results come from a single paper, redistribute by retrieving
+        top 5 chunks per paper separately and merging.
         """
         logger.info(f"Multi-doc query: '{question[:80]}'")
 
@@ -429,6 +589,13 @@ class RAGPipeline:
                 intent="multi_doc_reasoning",
             )
 
+        # Fix 6: check cross-paper coverage
+        results = self._enforce_multi_paper_coverage(
+            results=results,
+            question=question,
+            similarity_threshold=similarity_threshold,
+        )
+
         context = self.retriever.build_context(results, max_context_length=7000)
         answer = self.llm_client.generate_with_context(
             MULTI_DOC_PROMPT,
@@ -440,7 +607,65 @@ class RAGPipeline:
         return GenerationResponse(
             answer=answer,
             citations=self.retriever.get_citations(results),
-            query=question,
+            question=question,
             intent="multi_doc_reasoning",
             chunks_used=len(results),
         )
+
+    def _enforce_multi_paper_coverage(
+        self,
+        results: list,
+        question: str,
+        similarity_threshold: float | None,
+    ) -> list:
+        """
+        Fix 6 (2.5): If >80 % of retrieved results come from one paper,
+        redistribute by querying each available paper separately (top 5 each)
+        and merging the deduplicated results.
+        """
+        if not results:
+            return results
+
+        # Count results per source
+        from collections import Counter
+        source_counts: Counter = Counter(
+            r.chunk.metadata.source_file for r in results
+        )
+        total = len(results)
+        dominant_source, dominant_count = source_counts.most_common(1)[0]
+
+        if dominant_count / total <= 0.8:
+            # Coverage is already diverse
+            return results
+
+        logger.info(
+            f"Multi-doc: {dominant_count}/{total} results from '{dominant_source}'. "
+            "Redistributing across all papers."
+        )
+
+        try:
+            all_sources = self.retriever.vector_store.get_all_sources()
+        except Exception as e:
+            logger.warning(f"Could not get source list for redistribution: {e}")
+            return results
+
+        merged: list = []
+        seen_ids: set[str] = set()
+        for source in all_sources:
+            per_paper = self.retriever.retrieve(
+                query=question,
+                top_k=5,
+                filter_source=source,
+                similarity_threshold=similarity_threshold,
+            )
+            for r in per_paper:
+                if r.chunk.id not in seen_ids:
+                    merged.append(r)
+                    seen_ids.add(r.chunk.id)
+
+        if not merged:
+            return results
+
+        # Sort by relevance descending
+        merged.sort(key=lambda r: r.score, reverse=True)
+        return merged

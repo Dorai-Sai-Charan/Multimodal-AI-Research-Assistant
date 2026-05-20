@@ -37,9 +37,15 @@ class DocumentStore:
                     total_pages INTEGER DEFAULT 0,
                     total_chunks INTEGER DEFAULT 0,
                     ingested_at TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending'
+                    status TEXT DEFAULT 'pending',
+                    file_hash TEXT
                 )
             """)
+            # Add file_hash column to existing databases that pre-date this schema change
+            try:
+                self.conn.execute("ALTER TABLE documents ADD COLUMN file_hash TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
             self.conn.commit()
 
     def add_document(self, doc: DocumentInfo):
@@ -47,12 +53,24 @@ class DocumentStore:
         with self._lock:
             self.conn.execute(
                 """INSERT OR REPLACE INTO documents
-                   (id, filename, file_path, file_type, total_pages, total_chunks, ingested_at, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, filename, file_path, file_type, total_pages, total_chunks,
+                    ingested_at, status, file_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (doc.id, doc.filename, doc.file_path, doc.file_type,
-                 doc.total_pages, doc.total_chunks, doc.ingested_at, doc.status),
+                 doc.total_pages, doc.total_chunks, doc.ingested_at, doc.status,
+                 doc.file_hash),
             )
             self.conn.commit()
+
+    def get_by_hash(self, file_hash: str) -> "DocumentInfo | None":
+        """Return the first document with the given SHA-256 hash, or None."""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM documents WHERE file_hash = ? LIMIT 1", (file_hash,)
+            ).fetchone()
+        if row:
+            return DocumentInfo(**dict(row))
+        return None
 
     def update_status(self, doc_id: str, status: str, total_chunks: int = 0, total_pages: int = 0):
         """Update the processing status of a document."""

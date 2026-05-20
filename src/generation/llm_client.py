@@ -323,6 +323,68 @@ class LLMClient:
                 raise
         raise RuntimeError("Groq vision API rate limit exceeded after all retries.")
 
+    def generate_stream(self, prompt: str, llm_config: dict | None = None):
+        """
+        Generator that yields text chunks as they stream from Groq.
+
+        Builds the same messages array as ``generate()`` and calls the Groq
+        client with ``stream=True``.  Each non-empty delta content chunk is
+        yielded immediately so the caller can push tokens to the client as they
+        arrive.
+
+        Rate-limit errors (429) trigger a single retry without sleeping so the
+        stream is not stalled.
+        """
+        if not self.enabled:
+            yield (
+                "ERROR: GROQ_API_KEY is not set. Please add it to your .env file "
+                "to enable text generation and RAG features."
+            )
+            return
+
+        cfg = self._resolve_config(llm_config)
+
+        kwargs: dict = {
+            "model": cfg["model"],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert AI research assistant specializing in scientific "
+                        "paper analysis. Always be precise, technical, and cite your sources. "
+                        "When context is provided, base your answer strictly on that context."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": cfg["temperature"],
+            "max_tokens": cfg["max_tokens"],
+            "top_p": cfg["top_p"],
+            "frequency_penalty": cfg["frequency_penalty"],
+            "presence_penalty": cfg["presence_penalty"],
+            "stream": True,
+        }
+        if cfg["seed"] is not None:
+            kwargs["seed"] = int(cfg["seed"])
+        if cfg["model"] in REASONING_MODELS and cfg["reasoning_effort"]:
+            if cfg["model"] not in ["qwen/qwen3-32b", "groq/compound-mini"]:
+                kwargs["reasoning_effort"] = cfg["reasoning_effort"]
+
+        for attempt in range(1, 3):  # one retry on rate limit
+            try:
+                stream = self.client.chat.completions.create(**kwargs)
+                for chunk in stream:
+                    delta_content = chunk.choices[0].delta.content
+                    if delta_content:
+                        yield delta_content
+                return  # stream exhausted successfully
+            except Exception as e:
+                error_str = str(e)
+                if ("429" in error_str or "rate" in error_str.lower()) and attempt == 1:
+                    logger.warning("Groq rate limited during streaming — retrying once…")
+                    continue
+                raise
+
     def generate_with_context(
         self,
         prompt_template: str,

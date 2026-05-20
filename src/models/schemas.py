@@ -89,6 +89,7 @@ class DocumentInfo:
     total_chunks: int = 0
     ingested_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     status: str = "pending"  # pending | processing | completed | failed
+    file_hash: Optional[str] = None  # SHA-256 hex digest for duplicate detection
 
 
 @dataclass
@@ -106,7 +107,7 @@ class GenerationResponse:
 
     answer: str
     citations: list[dict] = field(default_factory=list)
-    query: str = ""
+    question: str = ""  # renamed from 'query' for consistency with request field naming
     intent: str = "question_answering"
     chunks_used: int = 0
 
@@ -129,7 +130,7 @@ class AgentResponse:
     answer: str
     reasoning_steps: list = field(default_factory=list)  # list[AgentStep]
     citations: list[dict] = field(default_factory=list)
-    query: str = ""
+    question: str = ""  # renamed from 'query' for consistency with request field naming
     intent: str = "question_answering"
     chunks_used: int = 0
     total_steps: int = 0

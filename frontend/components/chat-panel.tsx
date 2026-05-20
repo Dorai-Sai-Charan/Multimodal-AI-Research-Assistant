@@ -32,7 +32,7 @@ import { ReasoningSteps } from "./reasoning-steps";
 import { ExamplePrompts, type ExamplePrompt } from "./example-prompts";
 import { useAppStore } from "@/lib/store";
 import { useDocumentsPolling, useTunablePayload } from "@/lib/hooks";
-import { agentQuery, multiDocQuery, query } from "@/lib/api";
+import { agentQuery, multiDocQuery, query, queryStream } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +62,7 @@ const EXAMPLE_PROMPTS: ExamplePrompt[] = [
 export function ChatPanel() {
   const messages = useAppStore((s) => s.messages);
   const pushMessage = useAppStore((s) => s.pushMessage);
+  const updateMessage = useAppStore((s) => s.updateMessage);
   const clearMessages = useAppStore((s) => s.clearMessages);
   const agentMode = useAppStore((s) => s.agentMode);
   const setAgentMode = useAppStore((s) => s.setAgentMode);
@@ -199,18 +200,34 @@ export function ChatPanel() {
         citations = resp.citations;
         chunks_used = resp.chunks_used;
       } else {
-        const resp = await query(
-          {
-            ...tunable,
-            question: q,
-            top_k: settings.top_k,
-            filter_source: filter === "__all__" ? null : filter,
+        // Streaming RAG path: push a placeholder message immediately and
+        // append tokens as they arrive so the user sees progressive output.
+        const streamId = crypto.randomUUID();
+        pushMessage({
+          id: streamId,
+          role: "assistant",
+          content: "",
+          mode: "rag",
+          isStreaming: true,
+        });
+
+        let streamedContent = "";
+        await queryStream(
+          q,
+          filter === "__all__" ? null : filter,
+          (token) => {
+            streamedContent += token;
+            updateMessage(streamId, { content: streamedContent });
+          },
+          () => {
+            updateMessage(streamId, { isStreaming: false });
           },
           controller.signal,
         );
-        content = resp.answer;
-        citations = resp.citations;
-        chunks_used = resp.chunks_used;
+
+        // Skip the generic pushMessage below — message is already in the store.
+        setLoading(false);
+        return;
       }
 
       pushMessage({

@@ -6,6 +6,7 @@ and produces ExtractedElement objects for downstream chunking.
 
 import fitz  # PyMuPDF
 import os
+import re
 import logging
 from pathlib import Path
 from src.models.schemas import ExtractedElement
@@ -24,6 +25,20 @@ class PDFProcessor:
         "discussion", "conclusion", "conclusions", "future work",
         "references", "appendix", "acknowledgment", "acknowledgments",
     ]
+
+    # Prefixes that indicate figure/table captions, not headings
+    CAPTION_PREFIXES = (
+        "figure", "fig.", "table", "eq.", "equation", "scheme",
+    )
+
+    # Numbering patterns that are typical for section headings
+    _NUMBERING_RE = re.compile(
+        r"^(?:"
+        r"\d+\."            # 1.  or 2.3
+        r"|\d+\.\d+"
+        r"|[IVXLCDM]+\."   # Roman numerals: I. II. III.
+        r")"
+    )
 
     def extract(self, file_path: str) -> list[ExtractedElement]:
         """
@@ -63,21 +78,26 @@ class PDFProcessor:
                     for line in block.get("lines", []):
                         line_text = ""
                         max_font_size = 0
+                        all_spans = line.get("spans", [])
+                        all_bold = bool(all_spans)  # assume all bold until proven otherwise
 
-                        for span in line.get("spans", []):
+                        for span in all_spans:
                             text = span.get("text", "").strip()
                             if text:
                                 line_text += text + " "
                                 font_size = span.get("size", 12)
                                 if font_size > max_font_size:
                                     max_font_size = font_size
+                                # Bold flag is bit 4 (value 16) in PyMuPDF font flags
+                                if not (span.get("flags", 0) & 16):
+                                    all_bold = False
 
                         line_text = line_text.strip()
                         if not line_text:
                             continue
 
                         # Detect headings: larger font or known keywords
-                        is_heading = self._is_heading(line_text, max_font_size)
+                        is_heading = self._is_heading(line_text, max_font_size, all_bold)
                         if is_heading:
                             # Save accumulated text before heading
                             if page_text_parts:
@@ -122,26 +142,49 @@ class PDFProcessor:
         doc.close()
         return count
 
-    def _is_heading(self, text: str, font_size: float) -> bool:
+    def _is_heading(self, text: str, font_size: float, all_bold: bool = False) -> bool:
         """
-        Heuristic heading detection:
-        - Font size > 13 (larger than body text)
-        - Text matches common section heading keywords
-        - Short text (< 80 chars) with title-like casing
+        Improved heuristic heading detection.
+
+        Requirements to be classified as a heading:
+        1. Font size >= 14 AND text length < 100, PLUS at least one of:
+           a. Starts with a numbering pattern (e.g. "1.", "2.3", "III.")
+           b. Entire line is bold (font flag bit-4 set on all spans)
+           c. Matches a known section-heading keyword (with or without a
+              leading section number)
+        2. OR: keyword match even without a large font (backward-compat for
+           exact keyword lines in normal-sized fonts).
+
+        Caption prefixes (Figure, Table, Eq., …) are always excluded.
         """
-        text_lower = text.lower().strip()
+        text_stripped = text.strip()
+        text_lower = text_stripped.lower()
 
-        # Check known heading keywords
-        for keyword in self.HEADING_KEYWORDS:
-            if text_lower == keyword or text_lower.startswith(f"{keyword}:"):
-                return True
-            # Numbered headings like "1. Introduction", "2.1 Method"
-            stripped = text_lower.lstrip("0123456789. ")
-            if stripped == keyword or stripped.startswith(f"{keyword}:"):
-                return True
+        # --- 0. Skip figure/table captions -----------------------------------
+        for prefix in self.CAPTION_PREFIXES:
+            if text_lower.startswith(prefix):
+                return False
 
-        # Font size heuristic (typical body is 10-12pt)
-        if font_size >= 14 and len(text) < 100:
+        # --- 1. Keyword match (exact or after stripping leading number) ------
+        def _keyword_match(candidate: str) -> bool:
+            for keyword in self.HEADING_KEYWORDS:
+                if candidate == keyword or candidate.startswith(f"{keyword}:"):
+                    return True
+            return False
+
+        # bare keyword (any font size)
+        if _keyword_match(text_lower):
             return True
+
+        # strip a leading section number then re-check
+        stripped_lower = re.sub(r"^[\d\.\s]+", "", text_lower).strip()
+        if stripped_lower and _keyword_match(stripped_lower):
+            return True
+
+        # --- 2. Font-size gate (>= 14 pt, < 100 chars) with signal check ----
+        if font_size >= 14 and len(text_stripped) < 100:
+            has_numbering = bool(self._NUMBERING_RE.match(text_stripped))
+            if has_numbering or all_bold or _keyword_match(stripped_lower):
+                return True
 
         return False

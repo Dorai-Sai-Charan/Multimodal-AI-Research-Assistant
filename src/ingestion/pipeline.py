@@ -3,6 +3,7 @@ Document ingestion pipeline.
 Orchestrates: file upload → PDF processing → chunking → embedding → storage.
 """
 
+import hashlib
 import os
 import shutil
 import logging
@@ -56,11 +57,23 @@ class IngestionPipeline:
         """
         logger.info(f"Starting ingestion for: {original_filename}")
 
+        # Step 0: Duplicate detection via SHA-256 hash
+        file_hash = hashlib.sha256(open(file_path, "rb").read()).hexdigest()
+        existing_doc = self.document_store.get_by_hash(file_hash)
+        if existing_doc:
+            logger.info(
+                f"Duplicate file detected: '{original_filename}' matches existing "
+                f"document '{existing_doc.filename}' (id={existing_doc.id}). "
+                f"Returning existing document."
+            )
+            return existing_doc
+
         # Step 1: Create document record
         doc = DocumentInfo(
             filename=original_filename,
             file_path="",
             file_type=Path(original_filename).suffix.lstrip(".").lower(),
+            file_hash=file_hash,
         )
 
         # Step 2: Save file to upload directory
@@ -93,16 +106,14 @@ class IngestionPipeline:
                 pn = elem.page_number
                 page_word_counts[pn] = page_word_counts.get(pn, 0) + len(elem.content.split())
 
-            # Add images with lightweight placeholder descriptions.
-            # Vision analysis (Gemini) is deferred to query time to keep
-            # ingestion fast and avoid burning API quota during upload.
-            # OCR is run immediately for pages with low text yield.
+            # Process each image: run vision analysis at ingestion time, then OCR
+            # for low-text pages, then equation extraction.
             for img_elem in image_elements:
                 page_num = img_elem.page_number
                 image_path = img_elem.image_path
                 logger.info(
                     f"Adding image from page {page_num} "
-                    f"(vision analysis deferred to query time)"
+                    f"(running vision analysis at ingestion time)"
                 )
 
                 # --- OCR for low-text pages -----------------------------------
@@ -129,12 +140,46 @@ class IngestionPipeline:
                     except Exception as e:
                         logger.warning(f"Equation extraction failed for {image_path}: {e}")
 
-                # Build content string (base description + OCR text if available)
-                base_description = (
-                    f"[Figure on page {page_num}] "
-                    f"Image extracted from the document. "
-                    f"Path: {image_path}"
-                )
+                # --- Vision analysis (Gemini) at ingestion time ---------------
+                vision_description = ""
+                if image_path:
+                    try:
+                        description = self.vision_analyzer.analyze(image_path)
+                        # Accept the description only when it is substantive
+                        # and not a generic error/placeholder message.
+                        if (
+                            description
+                            and "unavailable" not in description.lower()
+                            and "disabled" not in description.lower()
+                            and len(description.strip()) > 20
+                        ):
+                            vision_description = description.strip()
+                            logger.info(
+                                f"Vision analysis completed for page {page_num} image "
+                                f"({len(vision_description)} chars)"
+                            )
+                        else:
+                            logger.info(
+                                f"Vision analysis returned placeholder for page {page_num}; "
+                                f"keeping default description"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Vision analysis failed for {image_path}: {e}. "
+                            f"Keeping placeholder description."
+                        )
+
+                # Build content string (vision description or placeholder + OCR)
+                if vision_description:
+                    base_description = (
+                        f"[Figure on page {page_num}] {vision_description}"
+                    )
+                else:
+                    base_description = (
+                        f"[Figure on page {page_num}] "
+                        f"Image extracted from the document. "
+                        f"Path: {image_path}"
+                    )
                 if ocr_text:
                     base_description += f"\nOCR Text: {ocr_text}"
 

@@ -36,12 +36,23 @@ class TableExtractor:
 
                         # Convert table to markdown for embedding/display
                         markdown_table = self._to_markdown(table)
-                        
-                        # Structured data for metadata
+
+                        # Build processed_table (None → "") for shape extraction
+                        processed_table = [
+                            [str(cell) if cell is not None else "" for cell in row]
+                            for row in table
+                        ]
+
+                        # Structured data for metadata.
+                        # cols/rows match the shape expected by visual-citations.tsx:
+                        #   cols: string[]          — header row
+                        #   rows: string[][]        — data rows
+                        # row_count/col_count kept for backwards compatibility.
                         table_data = {
-                            "rows": len(table),
-                            "cols": len(table[0]) if table else 0,
-                            "raw": table
+                            "cols": processed_table[0] if processed_table else [],
+                            "rows": processed_table[1:] if len(processed_table) > 1 else [],
+                            "row_count": len(table),
+                            "col_count": len(table[0]) if table else 0,
                         }
 
                         elements.append(ExtractedElement(
