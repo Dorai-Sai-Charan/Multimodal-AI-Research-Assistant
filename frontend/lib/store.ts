@@ -86,6 +86,10 @@ interface AppState {
   multiDocMode: boolean;
   setAgentMode: (v: boolean) => void;
   setMultiDocMode: (v: boolean) => void;
+
+  // Chat filter
+  chatFilter: string;
+  setChatFilter: (filter: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -137,13 +141,17 @@ export const useAppStore = create<AppState>()(
       multiDocMode: false,
       setAgentMode: (v) => set({ agentMode: v }),
       setMultiDocMode: (v) => set({ multiDocMode: v }),
+
+      chatFilter: "__all__",
+      setChatFilter: (filter) => set({ chatFilter: filter }),
     }),
     {
       name: "research-assistant-state",
       partialize: (state) => ({
         settings: state.settings,
-        messages: state.messages,
+        messages: state.messages.slice(-50),
         agentMode: state.agentMode,
+        chatFilter: state.chatFilter,
       }),
     },
   ),

@@ -94,10 +94,11 @@ class Retriever:
                 citation += f", Section: {chunk.metadata.section_heading}"
             citation += f"] (Relevance: {result.score:.2f})"
 
-            chunk_text = f"{citation}\n{chunk.content}\n"
-
-            if total_length + len(chunk_text) > max_context_length:
-                break
+            # Truncate individual chunks to 600 chars so all top-k results
+            # are included rather than stopping early at max_context_length.
+            chunk_body = chunk.content
+            truncated = chunk_body[:600] if len(chunk_body) > 600 else chunk_body
+            chunk_text = f"{citation}\n{truncated}\n"
 
             context_parts.append(chunk_text)
             total_length += len(chunk_text)

@@ -1,5 +1,5 @@
 """
-Semantic text chunker.
+Recursive text chunker.
 Splits extracted elements into appropriately-sized chunks
 while preserving metadata and section boundaries.
 """
@@ -12,10 +12,12 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
-class SemanticChunker:
+class RecursiveChunker:
     """
     Chunks extracted elements into pieces suitable for embedding.
     Uses RecursiveCharacterTextSplitter for intelligent splitting.
+
+    Minimum chunk length: 15 words (shorter chunks are discarded).
     """
 
     def __init__(
@@ -98,7 +100,9 @@ class SemanticChunker:
                 chunk_index += 1
 
             elif element.element_type == "figure":
-                # Figures: embed the image description
+                # Figures: embed the image description (may include OCR text)
+                # Carry through any LaTeX extracted during ingestion
+                latex_src = getattr(element, "_latex_source", None)
                 metadata = ChunkMetadata(
                     source_file=source_file,
                     page_number=element.page_number,
@@ -107,6 +111,7 @@ class SemanticChunker:
                     element_type="figure",
                     image_path=element.image_path,
                     image_description=element.content,
+                    latex_source=latex_src,
                     confidence=element.confidence,
                 )
 
@@ -134,6 +139,13 @@ class SemanticChunker:
                     metadata=metadata,
                 ))
                 chunk_index += 1
+
+        # Filter out chunks that are too short to be meaningful (< 15 words)
+        before_filter = len(chunks)
+        chunks = [c for c in chunks if len(c.content.split()) >= 15]
+        removed = before_filter - len(chunks)
+        if removed:
+            logger.info(f"Removed {removed} chunks shorter than 15 words")
 
         logger.info(
             f"Chunked {len(elements)} elements into {len(chunks)} chunks "

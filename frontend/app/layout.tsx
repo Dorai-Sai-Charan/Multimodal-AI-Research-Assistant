@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Sidebar } from "@/components/sidebar";
 import { ModelsBootstrap } from "@/components/models-bootstrap";
 import { Toaster } from "@/components/ui/toaster";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,9 +23,11 @@ export default function RootLayout({
         <Toaster />
         <div className="flex">
           <Sidebar />
-          <main className="flex-1 min-w-0 px-8 py-8">
-            <div className="max-w-5xl mx-auto">{children}</div>
-          </main>
+          <ErrorBoundary>
+            <main className="flex-1 min-w-0 px-8 py-8">
+              <div className="max-w-5xl mx-auto">{children}</div>
+            </main>
+          </ErrorBoundary>
         </div>
       </body>
     </html>

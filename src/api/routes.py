@@ -4,6 +4,7 @@ Covers all 20 system features via dedicated endpoints.
 """
 
 import os
+import asyncio
 import shutil
 import tempfile
 import logging
@@ -226,14 +227,28 @@ async def upload_document(file: UploadFile = File(...)):
 
         tmp_dir = os.path.join(settings.upload_dir, "_tmp")
         os.makedirs(tmp_dir, exist_ok=True)
-        saved_path = os.path.join(tmp_dir, file.filename)
-        with open(saved_path, "wb") as f:
-            f.write(await file.read())
+
+        # Fix 1: sanitize filename to prevent path traversal attacks
+        safe_name = os.path.basename(file.filename)
+        saved_path = os.path.join(tmp_dir, safe_name)
+
+        # Fix 2: enforce 50 MB file size limit
+        contents = await file.read()
+        if len(contents) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 50MB.")
+
+        # Fix 3: catch OSError separately to avoid leaking internal paths
+        try:
+            with open(saved_path, "wb") as f:
+                f.write(contents)
+        except OSError as oe:
+            logger.error(f"Failed to write uploaded file: {oe}")
+            raise HTTPException(status_code=500, detail="File processing failed. Please try again.")
 
         # Kick off ingestion in a background thread
         thread = threading.Thread(
             target=_ingest_in_background,
-            args=(saved_path, file.filename),
+            args=(saved_path, safe_name),
             daemon=True,
         )
         thread.start()
@@ -241,16 +256,18 @@ async def upload_document(file: UploadFile = File(...)):
         from datetime import datetime
         return DocumentResponse(
             id="processing",
-            filename=file.filename,
+            filename=safe_name,
             file_type="pdf",
             total_pages=0,
             total_chunks=0,
             status="processing",
             ingested_at=datetime.utcnow().isoformat(),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Upload failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
 
 
 @router.get("/documents", response_model=list[DocumentResponse])
@@ -373,6 +390,20 @@ async def query_documents(request: QueryRequest):
     """Answer a question using single-shot RAG."""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    # Fix 6: validate filter_source before running the query
+    if request.filter_source:
+        all_docs = get_ingestion_pipeline().get_all_documents()
+        known_sources = {d.filename for d in all_docs}
+        if request.filter_source not in known_sources:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No document with source '{request.filter_source}' found. "
+                    "Please check the filename."
+                ),
+            )
+
     try:
         return _to_query_response(
             get_rag_pipeline().query(
@@ -396,14 +427,20 @@ async def agent_query(request: AgentQueryRequest):
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     try:
-        resp = get_agent().run(
-            question=request.question,
-            chat_history=request.chat_history,
-            llm_config=(
-                request.llm_config.model_dump(exclude_none=True)
-                if request.llm_config else None
+        # Fix 4: agent.run() is synchronous — run it in a thread pool so it
+        # does not block the event loop while waiting on Groq responses.
+        _llm_config = (
+            request.llm_config.model_dump(exclude_none=True)
+            if request.llm_config else None
+        )
+        resp = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: get_agent().run(
+                question=request.question,
+                chat_history=request.chat_history,
+                llm_config=_llm_config,
+                filter_source=request.filter_source,
             ),
-            filter_source=request.filter_source,
         )
         return AgentQueryResponse(
             answer=resp.answer,
@@ -810,10 +847,11 @@ AVAILABLE_MODELS = [
     },
     {
         "id": "groq/compound-mini",
-        "label": "Groq Compound Mini — Fast agent",
+        "label": "Groq Compound Mini — Fast chat (no agent/tools)",
         "family": "Groq",
-        "best_for": "Faster agent runs when quality tradeoff is acceptable",
-        "supports_reasoning_effort": True,
+        "best_for": "Fast chat and RAG responses; does NOT support agent or tool calling",
+        "supports_reasoning_effort": False,
+        "supports_agent": False,  # Fix 7: groq/compound-mini does not support tool/function calling
     },
 ]
 

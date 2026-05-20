@@ -3,6 +3,7 @@
 import { Layers } from "lucide-react";
 import { Markdown } from "./markdown";
 import { Citations } from "./citations";
+import { VisualCitations } from "./visual-citations";
 import { ReasoningSteps } from "./reasoning-steps";
 import type { AgentQueryResponse, QueryResponse } from "@/lib/types";
 
@@ -16,6 +17,7 @@ export function ResultView({ data, modeLabel }: ResultViewProps) {
   return (
     <div className="glass rounded-xl p-6">
       <Markdown content={data.answer} />
+      <VisualCitations citations={data.citations ?? []} />
       <Citations citations={data.citations ?? []} />
       {isAgent && (
         <ReasoningSteps

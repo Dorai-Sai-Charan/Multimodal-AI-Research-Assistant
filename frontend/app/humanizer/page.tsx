@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sparkles, ScanText, Copy, Check } from "lucide-react";
 import { PageHeader, ResultCard } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/markdown";
 import { useAsync } from "@/lib/hooks";
 import { detectAI, humanizeText } from "@/lib/api";
 import type { AIDetectionResponse, HumanizationResponse } from "@/lib/types";
@@ -255,9 +256,7 @@ function HumanizationResult({ data }: { data: HumanizationResponse }) {
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Changes Made
           </h3>
-          <p className="text-sm text-slate-300 leading-relaxed">
-            {data.changes_made}
-          </p>
+          <Markdown content={data.changes_made} />
         </div>
       )}
     </div>
@@ -340,25 +339,25 @@ export default function HumanizerPage() {
         loading={detecting}
         error={detectionError}
         placeholder={
-          <span>
-            Paste text and click{" "}
-            <span className="text-brand-300 font-medium">Detect AI</span> to
-            analyze it, or{" "}
-            <span className="text-brand-300 font-medium">Humanize</span> to
-            rewrite it.
-          </span>
+          !detection && !humanized && !humanizing ? (
+            <span>
+              Paste text and click{" "}
+              <span className="text-brand-300 font-medium">Detect AI</span> to
+              analyze it, or{" "}
+              <span className="text-brand-300 font-medium">Humanize</span> to
+              rewrite it.
+            </span>
+          ) : undefined
         }
       >
         {detection && <DetectionResult data={detection} />}
       </ResultCard>
 
-      {(humanized || humanizeError || humanizing) && (
-        <div className="mt-4">
-          <ResultCard loading={humanizing} error={humanizeError}>
-            {humanized && <HumanizationResult data={humanized} />}
-          </ResultCard>
-        </div>
-      )}
+      <div className="mt-4">
+        <ResultCard loading={humanizing} error={humanizeError}>
+          {humanized && <HumanizationResult data={humanized} />}
+        </ResultCard>
+      </div>
     </>
   );
 }

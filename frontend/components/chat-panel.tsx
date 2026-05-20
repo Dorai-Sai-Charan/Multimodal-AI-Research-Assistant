@@ -27,6 +27,7 @@ import { Tooltip } from "./ui/tooltip";
 import { Kbd } from "./ui/kbd";
 import { Markdown } from "./markdown";
 import { Citations } from "./citations";
+import { VisualCitations } from "./visual-citations";
 import { ReasoningSteps } from "./reasoning-steps";
 import { ExamplePrompts, type ExamplePrompt } from "./example-prompts";
 import { useAppStore } from "@/lib/store";
@@ -68,6 +69,8 @@ export function ChatPanel() {
   const setMultiDocMode = useAppStore((s) => s.setMultiDocMode);
   const settings = useAppStore((s) => s.settings);
   const catalogue = useAppStore((s) => s.catalogue);
+  const filter = useAppStore((s) => s.chatFilter);
+  const setFilter = useAppStore((s) => s.setChatFilter);
 
   const tunable = useTunablePayload();
   const { documents } = useDocumentsPolling();
@@ -75,14 +78,20 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState("");
-  const [filter, setFilter] = useState<string>("__all__");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const completedDocs = documents.filter((d) => d.status === "completed");
   const activeModel = catalogue.models.find((m) => m.id === settings.model);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -143,6 +152,10 @@ export function ChatPanel() {
     const q = questionText.trim();
     if (!q || loading) return;
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -165,12 +178,15 @@ export function ChatPanel() {
 
       if (agentMode) {
         mode = "agent";
-        const resp = await agentQuery({
-          ...tunable,
-          question: q,
-          chat_history: history,
-          filter_source: filter === "__all__" ? null : filter,
-        });
+        const resp = await agentQuery(
+          {
+            ...tunable,
+            question: q,
+            chat_history: history,
+            filter_source: filter === "__all__" ? null : filter,
+          },
+          controller.signal,
+        );
         content = resp.answer;
         citations = resp.citations;
         reasoning = resp.reasoning_steps;
@@ -178,17 +194,20 @@ export function ChatPanel() {
         total_steps = resp.total_steps;
       } else if (multiDocMode) {
         mode = "multi-doc";
-        const resp = await multiDocQuery({ ...tunable, question: q });
+        const resp = await multiDocQuery({ ...tunable, question: q }, controller.signal);
         content = resp.answer;
         citations = resp.citations;
         chunks_used = resp.chunks_used;
       } else {
-        const resp = await query({
-          ...tunable,
-          question: q,
-          top_k: settings.top_k,
-          filter_source: filter === "__all__" ? null : filter,
-        });
+        const resp = await query(
+          {
+            ...tunable,
+            question: q,
+            top_k: settings.top_k,
+            filter_source: filter === "__all__" ? null : filter,
+          },
+          controller.signal,
+        );
         content = resp.answer;
         citations = resp.citations;
         chunks_used = resp.chunks_used;
@@ -223,7 +242,12 @@ export function ChatPanel() {
     const q = input.trim();
     if (!q || loading) return;
     setInput("");
-    await sendQuestion(q);
+    try {
+      await sendQuestion(q);
+    } catch (err) {
+      setInput(q);
+      throw err;
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -384,6 +408,7 @@ export function ChatPanel() {
                 <Markdown content={m.content} />
                 {m.role === "assistant" && (
                   <>
+                    <VisualCitations citations={m.citations ?? []} />
                     <Citations citations={m.citations ?? []} />
                     {m.reasoning_steps && (
                       <ReasoningSteps steps={m.reasoning_steps} />

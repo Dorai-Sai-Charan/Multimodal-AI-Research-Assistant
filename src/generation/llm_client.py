@@ -8,6 +8,7 @@ frontend settings panel can drive them dynamically.
 """
 
 import time
+import asyncio
 import threading
 import logging
 from groq import Groq
@@ -19,6 +20,33 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 15  # seconds
+MAX_TOTAL_RETRY_WAIT = 30  # seconds — cap total wait time (Fix 12)
+
+
+def _sleep(seconds: float) -> None:
+    """
+    Fix 12: Sleep without blocking the event loop.
+
+    When called from a thread that is NOT running an asyncio event loop
+    (background ingestion thread, humanizer thread, executor worker), this
+    falls back to the plain ``time.sleep`` so those paths are unaffected.
+    When called from a coroutine that is running on an event loop, we
+    schedule an asyncio sleep on the running loop so the event loop is not
+    blocked.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        # We are inside a running event loop — schedule a non-blocking sleep.
+        # run_coroutine_threadsafe blocks this thread but yields the loop.
+        future = asyncio.run_coroutine_threadsafe(asyncio.sleep(seconds), loop)
+        future.result()
+    else:
+        time.sleep(seconds)
+
 
 # Gemini model for vision tasks (VisionAnalyzer, EquationExtractor)
 GEMINI_MODEL = "gemini-2.0-flash"
@@ -49,7 +77,7 @@ class _GeminiRateLimiter:
             if elapsed < cls.MIN_INTERVAL:
                 gap = cls.MIN_INTERVAL - elapsed
                 logger.debug(f"Gemini rate limiter: sleeping {gap:.1f}s")
-                time.sleep(gap)
+                _sleep(gap)  # Fix 12: use non-blocking sleep
             cls._last_call = time.time()
 
 
@@ -73,12 +101,12 @@ def gemini_call_with_retry(client, contents, temperature=0.3, max_tokens=2048):
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                wait = RETRY_BASE_DELAY * attempt
+                wait = min(RETRY_BASE_DELAY * attempt, MAX_TOTAL_RETRY_WAIT)  # Fix 12: cap wait
                 logger.warning(
                     f"Gemini rate limited (attempt {attempt}/{MAX_RETRIES}). "
                     f"Waiting {wait}s…"
                 )
-                time.sleep(wait)
+                _sleep(wait)  # Fix 12: use non-blocking sleep
                 continue
             raise
     raise RuntimeError("Gemini API rate limit exceeded after all retries.")
@@ -160,7 +188,17 @@ class LLMClient:
 
         kwargs: dict = {
             "model": cfg["model"],
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert AI research assistant specializing in scientific "
+                        "paper analysis. Always be precise, technical, and cite your sources. "
+                        "When context is provided, base your answer strictly on that context."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
             "temperature": cfg["temperature"],
             "max_tokens": cfg["max_tokens"],
             "top_p": cfg["top_p"],
@@ -198,12 +236,12 @@ class LLMClient:
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "rate" in error_str.lower():
-                    wait = RETRY_BASE_DELAY * attempt
+                    wait = min(RETRY_BASE_DELAY * attempt, MAX_TOTAL_RETRY_WAIT)  # Fix 12: cap wait
                     logger.warning(
                         f"Groq rate limited (attempt {attempt}/{MAX_RETRIES}). "
                         f"Waiting {wait}s…"
                     )
-                    time.sleep(wait)
+                    _sleep(wait)  # Fix 12: use non-blocking sleep
                     continue
                 raise
         raise RuntimeError("Groq API rate limit exceeded after all retries.")
@@ -274,12 +312,12 @@ class LLMClient:
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "rate" in error_str.lower():
-                    wait = RETRY_BASE_DELAY * attempt
+                    wait = min(RETRY_BASE_DELAY * attempt, MAX_TOTAL_RETRY_WAIT)  # Fix 12: cap wait
                     logger.warning(
                         f"Groq vision rate limited (attempt {attempt}/{MAX_RETRIES}). "
                         f"Waiting {wait}s…"
                     )
-                    time.sleep(wait)
+                    _sleep(wait)  # Fix 12: use non-blocking sleep
                     continue
                 logger.error(f"Groq vision error: {e}")
                 raise

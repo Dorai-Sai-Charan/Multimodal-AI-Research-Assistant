@@ -7,7 +7,7 @@ import type { LLMSettings } from "./store";
 import type { LLMConfig, ModelInfo } from "./types";
 import { buildLLMConfig } from "./store";
 
-export function useDocumentsPolling(intervalMs = 4000) {
+export function useDocumentsPolling(baseIntervalMs = 4000) {
   const setDocuments = useAppStore((s) => s.setDocuments);
   const documents = useAppStore((s) => s.documents);
 
@@ -21,10 +21,12 @@ export function useDocumentsPolling(intervalMs = 4000) {
   }, [setDocuments]);
 
   useEffect(() => {
+    const hasPending = documents.some((d) => d.status === "processing");
+    const intervalMs = hasPending ? baseIntervalMs : 30000;
     refresh();
     const id = setInterval(refresh, intervalMs);
     return () => clearInterval(id);
-  }, [refresh, intervalMs]);
+  }, [refresh, baseIntervalMs, documents]);
 
   return { documents, refresh };
 }

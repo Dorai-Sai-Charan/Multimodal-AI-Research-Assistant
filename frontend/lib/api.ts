@@ -29,9 +29,13 @@ async function request<T>(
   path: string,
   init: RequestInit = {},
   timeoutMs = 300_000,
+  externalSignal?: AbortSignal,
 ): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
+  if (externalSignal) {
+    externalSignal.addEventListener("abort", () => ctl.abort(), { once: true });
+  }
   try {
     const res = await fetch(`${BASE}${path}`, {
       ...init,
@@ -116,11 +120,14 @@ export async function query(
     top_k?: number;
     filter_source?: string | null;
   },
+  signal?: AbortSignal,
 ): Promise<QueryResponse> {
-  return request<QueryResponse>("/query", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<QueryResponse>(
+    "/query",
+    { method: "POST", body: JSON.stringify(payload) },
+    300_000,
+    signal,
+  );
 }
 
 export async function agentQuery(
@@ -129,21 +136,26 @@ export async function agentQuery(
     chat_history: { role: string; content: string }[];
     filter_source?: string | null;
   },
+  signal?: AbortSignal,
 ): Promise<AgentQueryResponse> {
   return request<AgentQueryResponse>(
     "/agent",
     { method: "POST", body: JSON.stringify(payload) },
     180_000,
+    signal,
   );
 }
 
 export async function multiDocQuery(
   payload: TunablePayload & { question: string; top_k?: number },
+  signal?: AbortSignal,
 ): Promise<QueryResponse> {
-  return request<QueryResponse>("/multi-doc", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return request<QueryResponse>(
+    "/multi-doc",
+    { method: "POST", body: JSON.stringify(payload) },
+    300_000,
+    signal,
+  );
 }
 
 export async function comparePapers(

@@ -39,15 +39,20 @@ class Settings(BaseSettings):
     log_level: str = "info"
 
     # Chunking
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_size: int = 800
+    chunk_overlap: int = 150
 
     # Retrieval
     top_k: int = 10
-    similarity_threshold: float = 0.3
+    # ChromaDB cosine distance: distance = 1 - cosine_similarity,
+    # so similarity = 1.0 - distance (not distance / 2).
+    # Threshold of 0.45 requires at least moderate semantic overlap.
+    similarity_threshold: float = 0.45
 
     # LLM generation defaults (overridable per request from the UI)
-    llm_model: str = "llama-3.3-70b-versatile"
+    # qwen/qwen3-32b is confirmed to work with Groq native tool calling.
+    # llama-3.3-70b-versatile has known issues with tool calling on Groq.
+    llm_model: str = "qwen/qwen3-32b"
     llm_temperature: float = 0.2
     llm_max_tokens: int = 2048
     llm_top_p: float = 1.0

@@ -16,7 +16,7 @@ from src.ingestion.image_extractor import ImageExtractor
 from src.ingestion.ocr_processor import OCRProcessor
 from src.ingestion.vision_analyzer import VisionAnalyzer
 from src.ingestion.equation_extractor import EquationExtractor
-from src.ingestion.chunker import SemanticChunker
+from src.ingestion.chunker import RecursiveChunker
 from src.storage.embedding_service import EmbeddingService
 from src.storage.vector_store import VectorStore
 from src.storage.document_store import DocumentStore
@@ -38,7 +38,7 @@ class IngestionPipeline:
         self.ocr_processor = OCRProcessor()
         self.vision_analyzer = VisionAnalyzer()
         self.equation_extractor = EquationExtractor()
-        self.chunker = SemanticChunker()
+        self.chunker = RecursiveChunker()
         self.embedding_service = EmbeddingService()
         self.vector_store = VectorStore()
         self.document_store = DocumentStore()
@@ -86,20 +86,67 @@ class IngestionPipeline:
             processed_elements.extend(text_elements)
             processed_elements.extend(table_elements)
 
+            # Build a set of pages with low text yield (fewer than 100 words)
+            # so we know when to run OCR on extracted images.
+            page_word_counts: dict[int, int] = {}
+            for elem in text_elements:
+                pn = elem.page_number
+                page_word_counts[pn] = page_word_counts.get(pn, 0) + len(elem.content.split())
+
             # Add images with lightweight placeholder descriptions.
             # Vision analysis (Gemini) is deferred to query time to keep
             # ingestion fast and avoid burning API quota during upload.
+            # OCR is run immediately for pages with low text yield.
             for img_elem in image_elements:
+                page_num = img_elem.page_number
+                image_path = img_elem.image_path
                 logger.info(
-                    f"Adding image from page {img_elem.page_number} "
+                    f"Adding image from page {page_num} "
                     f"(vision analysis deferred to query time)"
                 )
-                img_elem.content = (
-                    f"[Figure on page {img_elem.page_number}] "
+
+                # --- OCR for low-text pages -----------------------------------
+                ocr_text = ""
+                if page_word_counts.get(page_num, 0) < 100 and image_path:
+                    try:
+                        ocr_elem = self.ocr_processor.extract_from_image(
+                            image_path, page_number=page_num
+                        )
+                        if ocr_elem.content.strip():
+                            ocr_text = ocr_elem.content.strip()
+                            logger.info(
+                                f"OCR produced {len(ocr_text.split())} words "
+                                f"for page {page_num} image"
+                            )
+                    except Exception as e:
+                        logger.warning(f"OCR failed for {image_path}: {e}")
+
+                # --- Equation extraction (LaTeX) ------------------------------
+                latex_result: dict = {}
+                if image_path:
+                    try:
+                        latex_result = self.equation_extractor.extract_from_image(image_path)
+                    except Exception as e:
+                        logger.warning(f"Equation extraction failed for {image_path}: {e}")
+
+                # Build content string (base description + OCR text if available)
+                base_description = (
+                    f"[Figure on page {page_num}] "
                     f"Image extracted from the document. "
-                    f"Path: {img_elem.image_path}"
+                    f"Path: {image_path}"
                 )
+                if ocr_text:
+                    base_description += f"\nOCR Text: {ocr_text}"
+
+                img_elem.content = base_description
                 img_elem.element_type = "figure"
+
+                # Store LaTeX in a custom attribute so the chunker can pick it up
+                if latex_result.get("latex"):
+                    img_elem._latex_source = latex_result["latex"]
+                else:
+                    img_elem._latex_source = None
+
                 processed_elements.append(img_elem)
 
             if not processed_elements:
@@ -118,7 +165,7 @@ class IngestionPipeline:
                 self.document_store.update_status(doc.id, "failed")
                 return doc
 
-            # Step 6: Generate embeddings
+            # Step 7: Generate embeddings
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
             texts = [chunk.content for chunk in chunks]
             embeddings = self.embedding_service.embed_texts(texts)
@@ -126,12 +173,12 @@ class IngestionPipeline:
             for chunk, embedding in zip(chunks, embeddings):
                 chunk.embedding = embedding
 
-            # Step 7: Store in vector database
+            # Step 8: Store in vector database
             logger.info("Storing chunks in vector database...")
             num_stored = self.vector_store.add_chunks(chunks)
             doc.total_chunks = num_stored
 
-            # Step 8: Update document status
+            # Step 9: Update document status
             doc.status = "completed"
             self.document_store.update_status(doc.id, "completed", num_stored, doc.total_pages)
 
@@ -153,15 +200,23 @@ class IngestionPipeline:
         if not doc:
             return False
 
-        # Delete chunks from vector store
-        self.vector_store.delete_by_source(doc.filename)
+        # Fix 5: delete from SQLite first so the record is gone even if the
+        # ChromaDB or file-system deletion fails partway through.
+        self.document_store.delete_document(doc_id)
 
         # Delete file from disk
         if os.path.exists(doc.file_path):
-            os.remove(doc.file_path)
+            try:
+                os.remove(doc.file_path)
+            except OSError as e:
+                logger.warning(f"Could not remove file {doc.file_path}: {e}")
 
-        # Delete from document store
-        self.document_store.delete_document(doc_id)
+        # Delete chunks from vector store last
+        try:
+            self.vector_store.delete_by_source(doc.filename)
+        except Exception as e:
+            logger.warning(f"Could not remove vector chunks for {doc.filename}: {e}")
+
         logger.info(f"Deleted document: {doc.filename} ({doc_id})")
         return True
 

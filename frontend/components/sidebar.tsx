@@ -62,7 +62,7 @@ const BADGES = ["RAG", "Agentic AI", "Multimodal", "Multi-hop", "Semantic"];
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="w-[340px] shrink-0 h-screen sticky top-0 glass-strong border-r border-border flex flex-col">
+    <aside className="w-[240px] lg:w-[340px] shrink-0 h-screen sticky top-0 glass-strong border-r border-border flex flex-col">
       {/* Header */}
       <div className="p-5 border-b border-border">
         <div className="flex items-center gap-3">

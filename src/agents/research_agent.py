@@ -179,6 +179,7 @@ class ResearchAgent:
 
         steps: list[AgentStep] = []
         all_observation_text = ""
+        citations_list: list[dict] = []
 
         for iteration in range(MAX_ITERATIONS):
             logger.info(f"Agent iteration {iteration + 1}/{MAX_ITERATIONS}")
@@ -231,7 +232,7 @@ class ResearchAgent:
                     return AgentResponse(
                         answer=thought,
                         reasoning_steps=steps,
-                        citations=[],
+                        citations=citations_list,
                         query=question,
                         intent="multi_hop_qa",
                         chunks_used=len(steps),
@@ -244,7 +245,7 @@ class ResearchAgent:
                 return AgentResponse(
                     answer=final_answer,
                     reasoning_steps=steps,
-                    citations=[],
+                    citations=citations_list,
                     query=question,
                     intent="multi_hop_qa",
                     chunks_used=len(steps),
@@ -256,6 +257,20 @@ class ResearchAgent:
 
             observation = self._execute(action, action_input)
             obs_truncated = observation[:2000] if len(observation) > 2000 else observation
+
+            # Parse citation patterns from the observation string
+            # Matches: [Paper: filename.pdf, Page: N] or [Paper: filename.pdf, Page N]
+            citation_pattern = re.compile(
+                r"\[Paper:\s*([^,\]]+?),\s*Page:?\s*(\d+)\]",
+                re.IGNORECASE,
+            )
+            for match in citation_pattern.finditer(obs_truncated):
+                source_file = match.group(1).strip()
+                page_num = int(match.group(2))
+                # Avoid duplicates
+                entry = {"source_file": source_file, "page": page_num, "relevance": 1.0}
+                if entry not in citations_list:
+                    citations_list.append(entry)
 
             step = AgentStep(
                 step_number=iteration + 1,
@@ -275,10 +290,31 @@ class ResearchAgent:
             )
 
         # ---- max iterations reached or loop ended without finish ----------
-        answer = self._generate_clarification(question, steps, llm_config)
+        # If at least one observation returned useful content, synthesise a
+        # final answer from what was retrieved rather than asking a question.
+        useful_observations = [
+            s.observation for s in steps
+            if s.observation and "No relevant content found" not in s.observation
+        ]
+
+        if useful_observations:
+            obs_context = "\n\n".join(useful_observations[:6])  # cap to avoid token overflow
+            synthesis_prompt = (
+                f"Based on the following retrieved information, answer the original "
+                f"question as best you can.\n\n"
+                f"ORIGINAL QUESTION: {question}\n\n"
+                f"RETRIEVED INFORMATION:\n{obs_context}\n\n"
+                f"ANSWER:"
+            )
+            answer = self.llm.generate(synthesis_prompt, temperature=0.2, llm_config=llm_config)
+        else:
+            # Nothing useful was found — ask for clarification
+            answer = self._generate_clarification(question, steps, llm_config)
+
         return AgentResponse(
             answer=answer,
             reasoning_steps=steps,
+            citations=citations_list,
             query=question,
             intent="multi_hop_qa",
             chunks_used=len(steps),
@@ -368,12 +404,18 @@ class ResearchAgent:
         return text.strip()
 
     def _format_history(self, history: list[dict]) -> str:
-        """Format the last 4 messages as context for the agent."""
+        """Format the last 8 messages as context for the agent."""
         if not history:
             return ""
-        recent = history[-4:]
-        lines = [
-            f"{m.get('role', 'user').upper()}: {str(m.get('content', ''))[:200]}"
-            for m in recent
-        ]
+        recent = history[-8:]
+        lines = []
+        for m in recent:
+            role = m.get("role", "user").upper()
+            content = str(m.get("content", ""))
+            # Truncate per-message to keep prompt manageable
+            if role == "ASSISTANT":
+                content = content[:500]
+            else:
+                content = content[:300]
+            lines.append(f"{role}: {content}")
         return "\nPrevious conversation:\n" + "\n".join(lines) + "\n"

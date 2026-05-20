@@ -139,9 +139,9 @@ class VectorStore:
             for i, chunk_id in enumerate(results["ids"][0]):
                 metadata_dict = results["metadatas"][0][i]
                 distance = results["distances"][0][i]
-                # ChromaDB cosine distance: 0 = identical, 2 = opposite
-                # Convert to similarity score: 1 - (distance / 2)
-                similarity = 1.0 - (distance / 2.0)
+                # ChromaDB stores cosine distance = 1 - cosine_similarity,
+                # so similarity = 1.0 - distance (range: 0–1).
+                similarity = 1.0 - distance
 
                 if similarity < settings.similarity_threshold:
                     continue

@@ -70,7 +70,7 @@ def compute_metrics(text: str) -> dict:
     return {
         "word_count": word_count,
         "sentence_count": sentence_count,
-        "avg_sent_len": round(avg_sent_len, 1),
+        "avg_sentence_length": round(avg_sent_len, 1),  # Fix 15: renamed from avg_sent_len
         "std_dev": round(std_dev, 1),
         "burstiness": round(burstiness, 2),
         "ttr": round(ttr, 2),
@@ -102,9 +102,9 @@ def heuristic_ai_score(m: dict) -> float:
         score -= 8
 
     # Average sentence length — AI clusters around 20-25 words
-    if 19 <= m["avg_sent_len"] <= 26:
+    if 19 <= m["avg_sentence_length"] <= 26:
         score += 12
-    elif m["avg_sent_len"] < 12 or m["avg_sent_len"] > 30:
+    elif m["avg_sentence_length"] < 12 or m["avg_sentence_length"] > 30:
         score -= 10
 
     # Type-token ratio — too uniform vocabulary = AI
@@ -210,10 +210,10 @@ class HumanizationEngine:
             self.detector_model = None
             self.detector_tokenizer = None
 
-        # Humanization: Gemini LLM
+        # Humanization: Groq LLM
         try:
             self.llm = LLMClient()
-            logger.info("✓ Gemini humanizer ready")
+            logger.info("✓ Groq humanizer LLM ready")  # Fix 14: corrected log message
         except Exception as e:
             logger.error(f"Failed to load LLM: {e}")
             self.llm = None
@@ -293,8 +293,8 @@ class HumanizationEngine:
                      "(repetitive - AI marker ✗)" if metrics['ttr'] < 0.45 else
                      "(moderate)"))
 
-        parts.append(f"**Avg Sentence Length:** {metrics['avg_sent_len']} words " +
-                    ("(in AI sweet spot 19-26 ✗)" if 19 <= metrics['avg_sent_len'] <= 26 else
+        parts.append(f"**Avg Sentence Length:** {metrics['avg_sentence_length']} words " +
+                    ("(in AI sweet spot 19-26 ✗)" if 19 <= metrics['avg_sentence_length'] <= 26 else
                      "(outside AI range ✓)"))
 
         if metrics['human_markers'] > 0:
