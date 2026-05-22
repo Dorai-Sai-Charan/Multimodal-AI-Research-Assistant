@@ -66,14 +66,12 @@ class PDFProcessor:
 
             for page_num in range(len(doc)):
                 page = doc[page_num]
-                blocks = page.get_text("dict", sort=True)["blocks"]
+                blocks = self._extract_blocks_in_reading_order(page)
 
                 page_text_parts = []
                 page_headings = []
 
                 for block in blocks:
-                    if block["type"] != 0:  # 0 = text block
-                        continue
 
                     for line in block.get("lines", []):
                         line_text = ""
@@ -141,6 +139,34 @@ class PDFProcessor:
         count = len(doc)
         doc.close()
         return count
+
+    def _extract_blocks_in_reading_order(self, page) -> list:
+        """Return text blocks sorted in correct reading order (handles 2-column layouts)."""
+        blocks = page.get_text("dict", sort=False)["blocks"]
+        page_width = page.rect.width
+        midpoint = page_width / 2
+
+        text_blocks = [b for b in blocks if b.get("type") == 0]  # type 0 = text
+
+        if not text_blocks:
+            return text_blocks
+
+        # Detect 2-column layout: check if blocks cluster into left/right groups
+        # Use 70% of midpoint as the threshold to separate left vs right columns
+        left_blocks = [b for b in text_blocks if b["bbox"][0] < midpoint * 0.7]
+        right_blocks = [b for b in text_blocks if b["bbox"][0] >= midpoint * 0.7]
+
+        # Two-column if significant content on both sides (at least 2 blocks each)
+        is_two_column = len(left_blocks) >= 2 and len(right_blocks) >= 2
+
+        if is_two_column:
+            # Sort each column top-to-bottom, then concatenate left then right
+            left_sorted = sorted(left_blocks, key=lambda b: b["bbox"][1])
+            right_sorted = sorted(right_blocks, key=lambda b: b["bbox"][1])
+            return left_sorted + right_sorted
+        else:
+            # Single column: sort all by y then x
+            return sorted(text_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0]))
 
     def _is_heading(self, text: str, font_size: float, all_bold: bool = False) -> bool:
         """

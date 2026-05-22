@@ -53,18 +53,25 @@ class AgentMemory:
             except Exception as exc:
                 logger.error("AgentMemory: failed to create table: %s", exc)
 
-    def store(self, session_id: str, key_fact: str) -> None:
-        """Store a key finding from an agent run."""
+    def store(self, session_id: str = "", key_fact: str = "", *, session_key: str = "") -> None:
+        """Store a key finding from an agent run.
+
+        Accepts either ``session_id`` (legacy) or ``session_key`` (new spec).
+        Short facts (< 20 chars) are silently ignored.
+        """
         if self.conn is None:
+            return
+        effective_key = session_key or session_id
+        if not key_fact or len(key_fact.strip()) < 20:
             return
         with self._lock:
             try:
                 self.conn.execute(
                     "INSERT INTO memories (session_id, key_fact) VALUES (?, ?)",
-                    (session_id, key_fact),
+                    (effective_key[:100], key_fact[:500]),
                 )
                 self.conn.commit()
-                logger.debug("AgentMemory: stored fact for session '%s'", session_id[:30])
+                logger.debug("AgentMemory: stored fact for session '%s'", effective_key[:30])
             except Exception as exc:
                 logger.error("AgentMemory: failed to store fact: %s", exc)
 
@@ -95,8 +102,26 @@ class AgentMemory:
                 logger.error("AgentMemory: failed to retrieve memories: %s", exc)
                 return []
 
+    def format_for_prompt(self, query: str) -> str:
+        """Return a formatted block of relevant past memories (max ~1500 chars).
+
+        Used by the streaming endpoint and any caller that wants to inject
+        cross-session context into a prompt without going through the full agent.
+        """
+        facts = self.retrieve_relevant(query)
+        if not facts:
+            return ""
+        block = "Relevant context from previous research sessions:\n" + "\n".join(
+            f"- {f}" for f in facts
+        )
+        return block[:1500]
+
     def get_summary(self, limit: int = 10) -> str:
-        """Return a formatted summary of recent memories for prompt injection."""
+        """Return a formatted summary of recent memories for prompt injection.
+
+        Kept for backward compatibility with ``ResearchAgent``.
+        New code should prefer ``format_for_prompt()``.
+        """
         facts = self.retrieve_relevant("", limit)
         if not facts:
             return ""

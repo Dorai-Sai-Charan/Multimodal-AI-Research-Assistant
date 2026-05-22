@@ -88,6 +88,14 @@ def _run_startup_checks() -> None:
 
 _run_startup_checks()
 
+# Build BM25 index over any chunks already in the vector store
+try:
+    from src.retrieval.retriever import Retriever
+    _startup_retriever = Retriever()
+    _startup_retriever.build_bm25_index()
+except Exception as _bm25_exc:
+    logger.warning(f"BM25 startup index build failed (non-fatal): {_bm25_exc}")
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Multimodal AI Research Assistant",

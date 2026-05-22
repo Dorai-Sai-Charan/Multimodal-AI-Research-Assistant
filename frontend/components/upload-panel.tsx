@@ -12,6 +12,7 @@ export function UploadPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   const handleUpload = useCallback(async () => {
@@ -22,14 +23,17 @@ export function UploadPanel() {
     const toastId = toast.loading(
       count === 1 ? `Uploading ${selectedFiles[0].name}…` : `Uploading ${count} files…`
     );
+    setUploadProgress({ current: 0, total: count });
 
     let successCount = 0;
     let failCount = 0;
 
     try {
-      // Process files sequentially to avoid overwhelming the frontend UI/toasts, 
+      // Process files sequentially to avoid overwhelming the frontend UI/toasts,
       // but the backend handles them in background threads anyway.
-      for (const file of selectedFiles) {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadProgress({ current: i + 1, total: count });
         try {
           await uploadDocument(file);
           successCount++;
@@ -59,6 +63,7 @@ export function UploadPanel() {
       toast.error("An unexpected error occurred during batch upload", { id: toastId });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }, [selectedFiles, refresh]);
 
@@ -205,8 +210,22 @@ export function UploadPanel() {
       )}
 
       {uploading && (
-        <div className="h-1.5 w-full rounded-full bg-bg-elevated overflow-hidden">
-          <div className="h-full w-full bg-gradient-brand animate-[shimmer_1.2s_linear_infinite]" />
+        <div className="space-y-1.5">
+          {uploadProgress && uploadProgress.total > 1 && (
+            <p className="text-[11px] text-slate-400 text-center">
+              Uploading {uploadProgress.current} of {uploadProgress.total} files…
+            </p>
+          )}
+          <div className="h-1.5 w-full rounded-full bg-bg-elevated overflow-hidden">
+            {uploadProgress && uploadProgress.total > 1 ? (
+              <div
+                className="h-full bg-gradient-brand transition-all duration-300"
+                style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+              />
+            ) : (
+              <div className="h-full w-full bg-gradient-brand animate-[shimmer_1.2s_linear_infinite]" />
+            )}
+          </div>
         </div>
       )}
     </div>

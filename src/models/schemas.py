@@ -90,6 +90,7 @@ class DocumentInfo:
     ingested_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     status: str = "pending"  # pending | processing | completed | failed
     file_hash: Optional[str] = None  # SHA-256 hex digest for duplicate detection
+    progress: str = ""  # human-readable progress message during ingestion
 
 
 @dataclass

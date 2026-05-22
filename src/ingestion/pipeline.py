@@ -88,13 +88,17 @@ class IngestionPipeline:
         try:
             # Step 4: Multimodal extraction
             logger.info("Extracting structured content (text, tables, images)...")
+            self.document_store.update_progress(doc.id, "Extracting text (step 1/6)")
             text_elements = self.pdf_processor.extract(dest_path)
+            self.document_store.update_progress(doc.id, "Extracting tables (step 2/6)")
             table_elements = self.table_extractor.extract(dest_path)
+            self.document_store.update_progress(doc.id, "Extracting images (step 3/6)")
             image_elements = self.image_extractor.extract(dest_path, doc_id=doc.id)
-            
+
             doc.total_pages = self.pdf_processor.get_page_count(dest_path)
             
             # Step 5: Process extracted images (Vision Analysis + OCR)
+            self.document_store.update_progress(doc.id, "Analyzing images with vision AI (step 3/6)")
             processed_elements = []
             processed_elements.extend(text_elements)
             processed_elements.extend(table_elements)
@@ -201,6 +205,7 @@ class IngestionPipeline:
                 return doc
 
             # Step 6: Chunk the content
+            self.document_store.update_progress(doc.id, "Chunking content (step 4/6)")
             logger.info(f"Chunking {len(processed_elements)} multimodal elements...")
             chunks = self.chunker.chunk(processed_elements, original_filename)
 
@@ -211,6 +216,7 @@ class IngestionPipeline:
                 return doc
 
             # Step 7: Generate embeddings
+            self.document_store.update_progress(doc.id, "Generating embeddings (step 5/6)")
             logger.info(f"Generating embeddings for {len(chunks)} chunks...")
             texts = [chunk.content for chunk in chunks]
             embeddings = self.embedding_service.embed_texts(texts)
@@ -219,6 +225,7 @@ class IngestionPipeline:
                 chunk.embedding = embedding
 
             # Step 8: Store in vector database
+            self.document_store.update_progress(doc.id, "Storing in vector database (step 6/6)")
             logger.info("Storing chunks in vector database...")
             num_stored = self.vector_store.add_chunks(chunks)
             doc.total_chunks = num_stored
@@ -226,6 +233,7 @@ class IngestionPipeline:
             # Step 9: Update document status
             doc.status = "completed"
             self.document_store.update_status(doc.id, "completed", num_stored, doc.total_pages)
+            self.document_store.update_progress(doc.id, "")
 
             logger.info(
                 f"Ingestion complete: {original_filename} "

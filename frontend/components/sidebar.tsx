@@ -10,8 +10,11 @@ import {
   TrendingUp,
   Microscope,
   Sparkles,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/lib/store";
 import { ModelSettings } from "./model-settings";
 import { UploadPanel } from "./upload-panel";
 import { DocumentList, DocumentStats } from "./document-list";
@@ -61,6 +64,8 @@ const BADGES = ["RAG", "Agentic AI", "Multimodal", "Multi-hop", "Semantic"];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const theme = useAppStore((s) => s.theme);
+  const toggleTheme = useAppStore((s) => s.toggleTheme);
   return (
     <aside className="w-[240px] lg:w-[340px] shrink-0 h-screen sticky top-0 glass-strong border-r border-border flex flex-col">
       {/* Header */}
@@ -83,6 +88,18 @@ export function Sidebar() {
           <div className="flex items-center gap-1">
             <BackendStatus compact />
             <HelpButton />
+            <button
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              className="p-1.5 rounded-lg hover:bg-bg-elevated text-slate-400 hover:text-slate-200 transition-colors"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-1">

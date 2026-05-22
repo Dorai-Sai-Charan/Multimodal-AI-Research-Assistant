@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/sidebar";
 import { ModelsBootstrap } from "@/components/models-bootstrap";
 import { Toaster } from "@/components/ui/toaster";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,18 +18,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body>
-        <ModelsBootstrap />
-        <Toaster />
-        <div className="flex">
-          <Sidebar />
-          <ErrorBoundary>
-            <main className="flex-1 min-w-0 px-8 py-8">
-              <div className="max-w-5xl mx-auto">{children}</div>
-            </main>
-          </ErrorBoundary>
-        </div>
+        <ThemeProvider>
+          <ModelsBootstrap />
+          <Toaster />
+          <div className="flex">
+            <Sidebar />
+            <ErrorBoundary>
+              <main className="flex-1 min-w-0 px-8 py-8">
+                <div className="max-w-5xl mx-auto">{children}</div>
+              </main>
+            </ErrorBoundary>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );

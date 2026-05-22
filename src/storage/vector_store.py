@@ -186,6 +186,17 @@ class VectorStore:
         )
         return query_results
 
+    def get_all_chunks(self) -> list[dict]:
+        """Return all stored chunks as {id, text} dicts — used by BM25 index builder."""
+        try:
+            result = self.collection.get(include=["documents"])
+            ids = result.get("ids", [])
+            docs = result.get("documents", [])
+            return [{"id": id_, "text": text} for id_, text in zip(ids, docs)]
+        except Exception as e:
+            logger.warning(f"get_all_chunks failed: {e}")
+            return []
+
     def delete_by_source(self, source_file: str) -> int:
         """Delete all chunks from a specific source file."""
         results = self.collection.get(

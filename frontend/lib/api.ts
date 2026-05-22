@@ -8,6 +8,7 @@
 import type {
   AgentQueryResponse,
   AIDetectionResponse,
+  Citation,
   DocumentInfo,
   HumanizationResponse,
   LLMConfig,
@@ -278,14 +279,14 @@ export async function explainVisual(payload: {
  * Stream a RAG answer token by token via Server-Sent Events.
  *
  * Calls POST /api/query/stream and reads the SSE response, invoking
- * ``onToken`` for each text chunk and ``onDone`` when the stream ends.
- * Pass an ``AbortSignal`` to cancel mid-stream.
+ * ``onToken`` for each text chunk and ``onDone`` (with citations) when the
+ * stream ends.  Pass an ``AbortSignal`` to cancel mid-stream.
  */
 export async function queryStream(
   question: string,
   filterSource: string | null,
   onToken: (token: string) => void,
-  onDone: () => void,
+  onDone: (citations: Citation[]) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch(`${BASE}/query/stream`, {
@@ -306,6 +307,7 @@ export async function queryStream(
 
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
+  let streamCitations: Citation[] = [];
 
   while (true) {
     const { done, value } = await reader.read();
@@ -315,19 +317,22 @@ export async function queryStream(
       if (line.startsWith("data: ")) {
         const data = line.slice(6);
         if (data === "[DONE]") {
-          onDone();
+          onDone(streamCitations);
           return;
         }
         try {
           const parsed = JSON.parse(data);
           if (parsed.token) onToken(parsed.token);
+          if (parsed.done && parsed.citations) {
+            streamCitations = parsed.citations as Citation[];
+          }
         } catch {
           // ignore malformed SSE lines
         }
       }
     }
   }
-  onDone();
+  onDone(streamCitations);
 }
 
 // ---------------- Humanizer ----------------
@@ -350,6 +355,31 @@ export async function humanizeText(
     { method: "POST", body: JSON.stringify(payload) },
     180_000,
   );
+}
+
+// ---------------- Export ----------------
+
+export async function exportResults(data: {
+  title: string;
+  answer: string;
+  question: string;
+  citations: Citation[];
+}): Promise<void> {
+  const response = await fetch(`${BASE}/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error("Export failed");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (data.title || "results").replace(/\s+/g, "_") + ".md";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export { ApiError };

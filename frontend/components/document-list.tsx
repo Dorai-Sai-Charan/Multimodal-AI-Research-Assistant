@@ -127,9 +127,14 @@ export function DocumentList() {
                     {doc.total_pages} pages · {doc.total_chunks} chunks
                   </p>
                   {doc.status === "processing" && (
-                    <div className="mt-1 h-1 rounded-full bg-bg-elevated overflow-hidden">
-                      <div className="h-full w-1/2 bg-accent-amber/60 shimmer" />
-                    </div>
+                    <>
+                      {doc.progress && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{doc.progress}</p>
+                      )}
+                      <div className="mt-1 h-1 rounded-full bg-bg-elevated overflow-hidden">
+                        <div className="h-full w-1/2 bg-accent-amber/60 shimmer" />
+                      </div>
+                    </>
                   )}
                 </div>
                 {doc.status !== "processing" && (

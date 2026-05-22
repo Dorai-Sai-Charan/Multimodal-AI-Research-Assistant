@@ -1,10 +1,12 @@
 "use client";
 
-import { Layers } from "lucide-react";
+import { Layers, Download } from "lucide-react";
+import { toast } from "sonner";
 import { Markdown } from "./markdown";
 import { Citations } from "./citations";
 import { VisualCitations } from "./visual-citations";
 import { ReasoningSteps } from "./reasoning-steps";
+import { exportResults } from "@/lib/api";
 import type { AgentQueryResponse, QueryResponse } from "@/lib/types";
 
 interface ResultViewProps {
@@ -14,8 +16,34 @@ interface ResultViewProps {
 
 export function ResultView({ data, modeLabel }: ResultViewProps) {
   const isAgent = "reasoning_steps" in data;
+
+  const handleExport = async () => {
+    try {
+      await exportResults({
+        title: data.query || "Results",
+        answer: data.answer,
+        question: data.query,
+        citations: data.citations ?? [],
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error("Export failed", { description: msg });
+    }
+  };
+
   return (
     <div className="glass rounded-xl p-6">
+      {data.answer && (
+        <div className="flex justify-end mb-3">
+          <button
+            onClick={handleExport}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded border border-border hover:bg-bg-elevated text-slate-300 hover:text-slate-100 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export .md
+          </button>
+        </div>
+      )}
       <Markdown content={data.answer} />
       <VisualCitations citations={data.citations ?? []} />
       <Citations citations={data.citations ?? []} />

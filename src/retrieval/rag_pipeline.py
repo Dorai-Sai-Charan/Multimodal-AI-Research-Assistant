@@ -122,16 +122,46 @@ class RAGPipeline:
         top_k: int = 10,
         filter_source: str | None = None,
         similarity_threshold: float | None = None,
+        chat_history: list[dict] | None = None,
     ) -> tuple[str, list]:
         """
         Perform retrieval and build the final QA prompt string without calling
         the LLM.  Returns ``(prompt_string, results_list)`` so the streaming
         endpoint can pass the prompt directly to ``generate_stream()``.
+
+        When ``chat_history`` has at least 2 entries the question is rewritten
+        as a standalone question (same logic as ``query()``) so the retriever
+        finds the right chunks even for follow-up questions.
         """
         logger.info(f"Building query prompt for: '{question[:80]}'")
 
+        retrieval_question = question
+
+        # Rewrite follow-up questions as standalone questions (mirrors query())
+        if chat_history and len(chat_history) >= 2:
+            last_two = chat_history[-2:]
+            history_text = "\n".join(
+                f"{turn.get('role', 'user').capitalize()}: {turn.get('content', '')}"
+                for turn in last_two
+            )
+            rewrite_prompt = (
+                f"Given this conversation history:\n{history_text}\n\n"
+                f"Rephrase the following question as a standalone question "
+                f"that can be understood without the conversation history. "
+                f"Return only the rephrased question, nothing else.\n\n"
+                f"Question: {question}"
+            )
+            try:
+                retrieval_question = self.llm_client.generate(
+                    rewrite_prompt, temperature=0.0, max_tokens=200
+                ).strip()
+                logger.info(f"Rewrote question to: '{retrieval_question[:80]}'")
+            except Exception as e:
+                logger.warning(f"Query rewriting failed, using original question: {e}")
+                retrieval_question = question
+
         results = self.retriever.retrieve(
-            query=question,
+            query=retrieval_question,
             top_k=top_k,
             filter_source=filter_source,
             similarity_threshold=similarity_threshold,

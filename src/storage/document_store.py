@@ -38,12 +38,18 @@ class DocumentStore:
                     total_chunks INTEGER DEFAULT 0,
                     ingested_at TEXT NOT NULL,
                     status TEXT DEFAULT 'pending',
-                    file_hash TEXT
+                    file_hash TEXT,
+                    progress TEXT DEFAULT ''
                 )
             """)
             # Add file_hash column to existing databases that pre-date this schema change
             try:
                 self.conn.execute("ALTER TABLE documents ADD COLUMN file_hash TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            # Add progress column to existing databases that pre-date this schema change
+            try:
+                self.conn.execute("ALTER TABLE documents ADD COLUMN progress TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass  # column already exists
             self.conn.commit()
@@ -54,11 +60,11 @@ class DocumentStore:
             self.conn.execute(
                 """INSERT OR REPLACE INTO documents
                    (id, filename, file_path, file_type, total_pages, total_chunks,
-                    ingested_at, status, file_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ingested_at, status, file_hash, progress)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (doc.id, doc.filename, doc.file_path, doc.file_type,
                  doc.total_pages, doc.total_chunks, doc.ingested_at, doc.status,
-                 doc.file_hash),
+                 doc.file_hash, doc.progress),
             )
             self.conn.commit()
 
@@ -69,7 +75,11 @@ class DocumentStore:
                 "SELECT * FROM documents WHERE file_hash = ? LIMIT 1", (file_hash,)
             ).fetchone()
         if row:
-            return DocumentInfo(**dict(row))
+            data = dict(row)
+            data.setdefault("progress", "")
+            if data["progress"] is None:
+                data["progress"] = ""
+            return DocumentInfo(**data)
         return None
 
     def update_status(self, doc_id: str, status: str, total_chunks: int = 0, total_pages: int = 0):
@@ -81,6 +91,15 @@ class DocumentStore:
             )
             self.conn.commit()
 
+    def update_progress(self, doc_id: str, progress: str):
+        """Update the progress message for a document currently being ingested."""
+        with self._lock:
+            self.conn.execute(
+                "UPDATE documents SET progress = ? WHERE id = ?",
+                (progress, doc_id),
+            )
+            self.conn.commit()
+
     def get_document(self, doc_id: str) -> DocumentInfo | None:
         """Retrieve a document by ID."""
         with self._lock:
@@ -88,7 +107,11 @@ class DocumentStore:
                 "SELECT * FROM documents WHERE id = ?", (doc_id,)
             ).fetchone()
         if row:
-            return DocumentInfo(**dict(row))
+            data = dict(row)
+            data.setdefault("progress", "")
+            if data["progress"] is None:
+                data["progress"] = ""
+            return DocumentInfo(**data)
         return None
 
     def get_all_documents(self) -> list[DocumentInfo]:
@@ -97,7 +120,14 @@ class DocumentStore:
             rows = self.conn.execute(
                 "SELECT * FROM documents ORDER BY ingested_at DESC"
             ).fetchall()
-        return [DocumentInfo(**dict(row)) for row in rows]
+        result = []
+        for row in rows:
+            data = dict(row)
+            data.setdefault("progress", "")
+            if data["progress"] is None:
+                data["progress"] = ""
+            result.append(DocumentInfo(**data))
+        return result
 
     def delete_document(self, doc_id: str):
         """Delete a document record."""

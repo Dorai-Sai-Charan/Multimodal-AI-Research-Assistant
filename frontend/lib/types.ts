@@ -54,6 +54,7 @@ export interface DocumentInfo {
   total_chunks: number;
   status: "processing" | "completed" | "failed" | string;
   ingested_at: string;
+  progress?: string;
 }
 
 export interface ModelInfo {

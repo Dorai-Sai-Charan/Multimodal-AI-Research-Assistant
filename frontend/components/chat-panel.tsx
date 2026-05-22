@@ -219,8 +219,8 @@ export function ChatPanel() {
             streamedContent += token;
             updateMessage(streamId, { content: streamedContent });
           },
-          () => {
-            updateMessage(streamId, { isStreaming: false });
+          (citations) => {
+            updateMessage(streamId, { isStreaming: false, citations });
           },
           controller.signal,
         );

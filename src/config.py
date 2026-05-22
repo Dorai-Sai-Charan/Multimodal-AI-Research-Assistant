@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # so similarity = 1.0 - distance (not distance / 2).
     # Threshold of 0.45 requires at least moderate semantic overlap.
     similarity_threshold: float = 0.45
+    use_hyde: bool = False
 
     # LLM generation defaults (overridable per request from the UI)
     # qwen/qwen3-32b is confirmed to work with Groq native tool calling.

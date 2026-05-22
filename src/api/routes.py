@@ -36,6 +36,7 @@ _ingestion_pipeline: IngestionPipeline | None = None
 _rag_pipeline: RAGPipeline | None = None
 _agent: ResearchAgent | None = None
 _humanizer: HumanizationEngine | None = None
+_retriever = None
 
 
 def get_ingestion_pipeline() -> IngestionPipeline:
@@ -64,6 +65,14 @@ def get_humanizer() -> HumanizationEngine:
     if _humanizer is None:
         _humanizer = HumanizationEngine()
     return _humanizer
+
+
+def get_retriever():
+    global _retriever
+    if _retriever is None:
+        from src.retrieval.retriever import Retriever
+        _retriever = Retriever()
+    return _retriever
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +174,7 @@ class DocumentResponse(BaseModel):
     total_chunks: int
     status: str
     ingested_at: str
+    progress: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +213,11 @@ def _ingest_in_background(saved_path: str, filename: str):
             pipeline = get_ingestion_pipeline()
             pipeline.ingest_file(saved_path, filename)
             logger.info(f"Background ingestion completed for {filename}")
+            # Rebuild BM25 index so new chunks are searchable immediately
+            try:
+                get_retriever().build_bm25_index()
+            except Exception as bm25_exc:
+                logger.warning(f"BM25 index rebuild failed after ingestion: {bm25_exc}")
         except Exception as e:
             logger.error(f"Background ingestion failed for {filename}: {e}")
 
@@ -277,6 +292,86 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
 
 
+@router.post("/upload/batch")
+async def upload_batch(files: list[UploadFile] = File(...)):
+    """
+    Upload multiple PDF files at once.
+    Applies the same validation as single /upload (PDF only, 50 MB limit,
+    filename sanitization, SHA-256 duplicate detection).
+    Returns immediately — ingestion runs in background threads.
+    Poll GET /documents for status updates.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    from src.config import settings, ensure_directories
+    from datetime import datetime
+
+    ensure_directories()
+    tmp_dir = os.path.join(settings.upload_dir, "_tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    results = []
+    for file in files:
+        if not file.filename:
+            results.append({"filename": "", "error": "Empty filename", "status": "rejected"})
+            continue
+
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext != ".pdf":
+            results.append({
+                "filename": file.filename,
+                "error": f"Unsupported file type '{ext}'. Only PDF is accepted.",
+                "status": "rejected",
+            })
+            continue
+
+        # Sanitize filename
+        safe_name = os.path.basename(file.filename)
+        safe_name = re.sub(r'[^\w\-_\.]', '_', safe_name)
+        safe_name = re.sub(r'_+', '_', safe_name)
+
+        # Read and size-check
+        try:
+            contents = await file.read()
+        except Exception as read_err:
+            logger.error(f"Failed to read uploaded file {file.filename}: {read_err}")
+            results.append({"filename": file.filename, "error": "Failed to read file", "status": "rejected"})
+            continue
+
+        if len(contents) > 50 * 1024 * 1024:
+            results.append({
+                "filename": file.filename,
+                "error": "File too large. Maximum size is 50MB.",
+                "status": "rejected",
+            })
+            continue
+
+        saved_path = os.path.join(tmp_dir, safe_name)
+        try:
+            with open(saved_path, "wb") as f:
+                f.write(contents)
+        except OSError as oe:
+            logger.error(f"Failed to write uploaded file {safe_name}: {oe}")
+            results.append({"filename": file.filename, "error": "File processing failed.", "status": "rejected"})
+            continue
+
+        # Kick off ingestion in a background thread
+        thread = threading.Thread(
+            target=_ingest_in_background,
+            args=(saved_path, safe_name),
+            daemon=True,
+        )
+        thread.start()
+
+        results.append({
+            "filename": safe_name,
+            "status": "processing",
+        })
+
+    return {"uploaded": len([r for r in results if r["status"] == "processing"]), "documents": results}
+
+
 @router.get("/documents", response_model=list[DocumentResponse])
 async def list_documents():
     """List all ingested documents."""
@@ -290,6 +385,7 @@ async def list_documents():
             total_chunks=d.total_chunks,
             status=d.status,
             ingested_at=d.ingested_at,
+            progress=d.progress,
         )
         for d in docs
     ]
@@ -461,12 +557,14 @@ async def query_documents_stream(request: QueryRequest):
             request.llm_config.model_dump(exclude_none=True)
             if request.llm_config else None
         )
-        prompt, _ = rag_pipeline.build_query_prompt(
+        prompt, results = rag_pipeline.build_query_prompt(
             question=request.question,
             top_k=request.top_k,
             filter_source=request.filter_source,
             similarity_threshold=request.similarity_threshold,
+            chat_history=request.chat_history,
         )
+        citations = rag_pipeline.retriever.get_citations(results) if results else []
     except Exception as e:
         logger.error(f"Streaming query prompt build failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -478,6 +576,8 @@ async def query_documents_stream(request: QueryRequest):
         except Exception as exc:
             logger.error(f"Streaming generation error: {exc}")
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        # Send citations alongside the done signal before the DONE sentinel
+        yield f"data: {json.dumps({'citations': citations, 'done': True})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -628,27 +728,76 @@ async def explain_concept(request: ExplainRequest):
 
 
 class ExplainVisualRequest(BaseModel):
-    chunk_id: str
+    chunk_id: str | None = None
+    image_path: str | None = None  # alternative to chunk_id
     user_question: str | None = None  # optional follow-up question
 
 
 @router.post("/explain-visual")
 async def explain_visual(request: ExplainVisualRequest):
     """
-    Explain a specific visual (figure, table, equation) using Gemini Vision.
+    Explain a specific visual (figure, table, equation) using Vision AI.
 
     Unlike /explain (which is text-only via Groq), this endpoint:
     - Loads the actual image file from disk
-    - Sends it to Gemini Vision for true visual analysis
-    - Combines that with surrounding text from the paper
+    - Sends it to Vision AI for true visual analysis
+    - Combines that with surrounding text from the paper (when chunk_id given)
     - Returns a detailed structured explanation
+
+    Accepts either chunk_id (UUID from ChromaDB) or image_path (direct file path).
     """
     import os
     from src.ingestion.vision_analyzer import VisionAnalyzer
 
-    if not request.chunk_id.strip():
-        raise HTTPException(status_code=400, detail="chunk_id is required")
+    if not request.chunk_id and not request.image_path:
+        raise HTTPException(status_code=400, detail="Either chunk_id or image_path is required.")
 
+    # --- Path A: image_path provided without chunk_id -------------------------
+    if request.image_path and not request.chunk_id:
+        image_path = request.image_path
+        if not os.path.exists(image_path):
+            raise HTTPException(status_code=404, detail=f"Image file not found: {image_path}")
+
+        base_prompt = (
+            "You are analyzing a figure from a research paper. Provide a CLEAR, STRUCTURED explanation:\n\n"
+            "1. **What it shows** — describe what the figure depicts\n"
+            "2. **Components & Labels** — identify every key element, label, axis, legend\n"
+            "3. **Key insight** — what is the figure trying to communicate?\n\n"
+            "Use markdown formatting with headings and bullet points for clarity."
+        )
+        full_prompt = base_prompt
+        if request.user_question and request.user_question.strip():
+            full_prompt += f"\n\n**Specific question from the user:** {request.user_question}\n"
+
+        try:
+            from src.generation.llm_client import LLMClient
+            llm = LLMClient()
+            if llm.enabled:
+                explanation = llm.generate_with_image(
+                    prompt=full_prompt,
+                    image_path=image_path,
+                    temperature=0.3,
+                    max_tokens=2000,
+                )
+            else:
+                analyzer = VisionAnalyzer()
+                if analyzer.enabled:
+                    explanation = analyzer.analyze(image_path, prompt=full_prompt)
+                else:
+                    explanation = "No vision API configured. Cannot analyze image."
+        except Exception as e:
+            logger.error(f"Vision analysis via image_path failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+        return {
+            "answer": explanation,
+            "citations": [{"image_url": f"/images/{os.path.basename(image_path)}", "relevance_score": 1.0}],
+            "question": f"Explain image: {os.path.basename(image_path)}",
+            "intent": "explain_visual",
+            "chunks_used": 1,
+        }
+
+    # --- Path B: chunk_id provided (original behaviour) ----------------------
     try:
         vs = get_rag_pipeline().retriever.vector_store
 
@@ -840,6 +989,54 @@ async def multi_doc_query(request: MultiDocRequest):
     except Exception as e:
         logger.error(f"Multi-doc query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Export results as Markdown
+# ---------------------------------------------------------------------------
+
+class ExportRequest(BaseModel):
+    title: str = "Research Results"
+    answer: str
+    citations: list[dict] = []
+    question: str = ""
+
+
+@router.post("/export")
+async def export_results(request: ExportRequest):
+    """Export answer and citations as a downloadable Markdown file."""
+    from fastapi.responses import Response as FastAPIResponse
+
+    lines = [f"# {request.title}\n"]
+    if request.question:
+        lines.append(f"**Question:** {request.question}\n")
+    lines.append(f"\n## Answer\n\n{request.answer}\n")
+    if request.citations:
+        lines.append("\n## Sources\n")
+        seen: set[tuple] = set()
+        citation_index = 1
+        for c in request.citations:
+            src = c.get("source_file", "Unknown")
+            page = c.get("page_number", "?")
+            section = c.get("section", "")
+            key = (src, page)
+            if key in seen:
+                continue
+            seen.add(key)
+            line = f"{citation_index}. **{src}**, Page {page}"
+            if section:
+                line += f" — {section}"
+            lines.append(line)
+            citation_index += 1
+
+    content = "\n".join(lines)
+    # Derive a safe filename from the title
+    filename = re.sub(r'[^\w\-_]', '_', request.title)[:40] + ".md"
+    return FastAPIResponse(
+        content=content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

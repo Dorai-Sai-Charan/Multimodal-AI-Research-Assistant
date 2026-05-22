@@ -91,6 +91,10 @@ interface AppState {
   // Chat filter
   chatFilter: string;
   setChatFilter: (filter: string) => void;
+
+  // Theme
+  theme: "dark" | "light";
+  toggleTheme: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -151,6 +155,10 @@ export const useAppStore = create<AppState>()(
 
       chatFilter: "__all__",
       setChatFilter: (filter) => set({ chatFilter: filter }),
+
+      theme: "dark",
+      toggleTheme: () =>
+        set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
     }),
     {
       name: "research-assistant-state",
@@ -159,6 +167,7 @@ export const useAppStore = create<AppState>()(
         messages: state.messages.slice(-50),
         agentMode: state.agentMode,
         chatFilter: state.chatFilter,
+        theme: state.theme,
       }),
     },
   ),
