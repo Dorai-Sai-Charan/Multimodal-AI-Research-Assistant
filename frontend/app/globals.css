@@ -8,12 +8,33 @@
 
 @layer base {
   :root {
+    color-scheme: light;
+    --bg: 245 245 255;
+    --bg-subtle: 238 238 248;
+    --bg-card: 232 232 245;
+    --bg-elevated: 220 220 240;
+    --color-border: 200 200 224;
+    --color-border-strong: 176 176 204;
+  }
+  .dark {
     color-scheme: dark;
+    --bg: 10 10 20;
+    --bg-subtle: 18 18 42;
+    --bg-card: 26 26 46;
+    --bg-elevated: 35 35 63;
+    --color-border: 42 42 74;
+    --color-border-strong: 58 58 90;
   }
   html,
   body {
-    @apply bg-bg text-slate-100 antialiased;
+    @apply bg-bg antialiased;
     min-height: 100vh;
+  }
+  html:not(.dark) body {
+    @apply text-slate-800;
+  }
+  html.dark body {
+    @apply text-slate-100;
   }
   body {
     background-image:
@@ -42,10 +63,14 @@
 
 @layer components {
   .glass {
-    @apply bg-bg-card/70 backdrop-blur-xl border border-border/60;
+    @apply backdrop-blur-xl;
+    background-color: rgb(var(--bg-card) / 0.7);
+    border: 1px solid rgb(var(--color-border) / 0.6);
   }
   .glass-strong {
-    @apply bg-bg-card/90 backdrop-blur-2xl border border-border;
+    @apply backdrop-blur-2xl;
+    background-color: rgb(var(--bg-card) / 0.9);
+    border: 1px solid rgb(var(--color-border));
   }
   .gradient-text {
     @apply bg-gradient-brand bg-clip-text text-transparent;

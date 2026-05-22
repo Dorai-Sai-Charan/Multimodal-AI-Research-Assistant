@@ -21,6 +21,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { ExamplePrompts, type ExamplePrompt } from "@/components/example-prompts";
 import { useDocumentsPolling, useTunablePayload, useAsync } from "@/lib/hooks";
 import { literatureSurvey, researchGaps } from "@/lib/api";
+import { NoDocumentsState } from "@/components/no-documents-state";
 
 const TOPIC_EXAMPLES: ExamplePrompt[] = [
   {
@@ -79,10 +80,14 @@ export default function SurveyPage() {
 }
 
 function SurveyTab() {
+  const { documents } = useDocumentsPolling();
   const tunable = useTunablePayload();
+  const completed = documents.filter((d) => d.status === "completed");
   const [topic, setTopic] = useState("");
   const [topK, setTopK] = useState(30);
   const { data, error, loading, run } = useAsync(literatureSurvey);
+
+  if (completed.length === 0) return <NoDocumentsState feature="Literature Survey" />;
 
   return (
     <>
@@ -149,6 +154,8 @@ function GapsTab() {
   const completed = documents.filter((d) => d.status === "completed");
   const [source, setSource] = useState("__all__");
   const { data, error, loading, run } = useAsync(researchGaps);
+
+  if (completed.length === 0) return <NoDocumentsState feature="Research Gaps" />;
 
   return (
     <>

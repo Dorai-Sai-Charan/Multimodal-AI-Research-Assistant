@@ -20,6 +20,7 @@ import { InfoTip } from "@/components/ui/info-tip";
 import { ExamplePrompts, type ExamplePrompt } from "@/components/example-prompts";
 import { useDocumentsPolling, useTunablePayload, useAsync } from "@/lib/hooks";
 import { recommendPapers, researchTrends, summarize } from "@/lib/api";
+import { NoDocumentsState } from "@/components/no-documents-state";
 
 const INTEREST_EXAMPLES: ExamplePrompt[] = [
   {
@@ -76,8 +77,13 @@ export default function TrendsPage() {
 }
 
 function TrendsTab() {
+  const { documents } = useDocumentsPolling();
   const tunable = useTunablePayload();
+  const completed = documents.filter((d) => d.status === "completed");
   const { data, error, loading, run } = useAsync(researchTrends);
+
+  if (completed.length === 0) return <NoDocumentsState feature="Trends Analysis" />;
+
   return (
     <>
       <div className="glass rounded-2xl p-6 mb-5 shadow-xl shadow-black/20">
@@ -136,9 +142,14 @@ function TrendsTab() {
 }
 
 function RecommendTab() {
+  const { documents } = useDocumentsPolling();
   const tunable = useTunablePayload();
+  const completed = documents.filter((d) => d.status === "completed");
   const [interest, setInterest] = useState("");
   const { data, error, loading, run } = useAsync(recommendPapers);
+
+  if (completed.length === 0) return <NoDocumentsState feature="Paper Recommendations" />;
+
   return (
     <>
       <div className="glass rounded-2xl p-6 mb-5 space-y-5 shadow-xl shadow-black/20">
@@ -194,6 +205,7 @@ function SummaryTab() {
   const { documents } = useDocumentsPolling();
   const tunable = useTunablePayload();
   const completed = documents.filter((d) => d.status === "completed");
+  if (completed.length === 0) return <NoDocumentsState feature="Paper Summarization" />;
   const [source, setSource] = useState("__all__");
   const { data, error, loading, run } = useAsync(summarize);
   return (

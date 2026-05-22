@@ -29,6 +29,7 @@ import {
   type VisualItem,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { NoDocumentsState } from "@/components/no-documents-state";
 
 const SEARCH_EXAMPLES: ExamplePrompt[] = [
   { icon: Binary, title: "Attention mechanism", prompt: "attention mechanism in transformers" },
@@ -76,6 +77,8 @@ function SearchTab() {
   const [source, setSource] = useState("__all__");
   const [topK, setTopK] = useState(10);
   const { data, error, loading, run } = useAsync(query);
+
+  if (completed.length === 0) return <NoDocumentsState feature="Search" />;
 
   return (
     <>
@@ -186,6 +189,7 @@ function ExplainTab() {
   const tunable = useTunablePayload();
   const completed = documents.filter((d) => d.status === "completed");
   const [concept, setConcept] = useState("");
+  if (completed.length === 0) return <NoDocumentsState feature="Explain" />;
   const [source, setSource] = useState("__all__");
   const [selectedVisual, setSelectedVisual] = useState<VisualItem | null>(null);
   // Snapshot of which visual was the basis for the current explanation

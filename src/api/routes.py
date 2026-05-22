@@ -75,6 +75,35 @@ def get_retriever():
     return _retriever
 
 
+def _require_documents(filter_source: str | None = None) -> None:
+    """
+    Raise HTTP 400 if no completed documents exist in the store.
+    Call this at the top of every RAG endpoint so users get a clear error
+    instead of hallucinated responses from orphaned ChromaDB chunks.
+    If filter_source is given, also verify that specific paper is completed.
+    """
+    all_docs = get_ingestion_pipeline().get_all_documents()
+    completed = [d for d in all_docs if d.status == "completed"]
+
+    if not completed:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No papers uploaded yet. Please upload at least one PDF before "
+                "using this feature."
+            ),
+        )
+
+    if filter_source:
+        match = [d for d in completed if d.filename == filter_source]
+        if not match:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Paper '{filter_source}' not found or not yet processed. "
+                       "Please upload it first.",
+            )
+
+
 # ---------------------------------------------------------------------------
 # Request / Response Models
 # ---------------------------------------------------------------------------
@@ -495,19 +524,7 @@ async def query_documents(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     if len(request.question) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
-
-    # Fix 6: validate filter_source before running the query
-    if request.filter_source:
-        all_docs = get_ingestion_pipeline().get_all_documents()
-        known_sources = {d.filename for d in all_docs}
-        if request.filter_source not in known_sources:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No document with source '{request.filter_source}' found. "
-                    "Please check the filename."
-                ),
-            )
+    _require_documents(filter_source=request.filter_source)
 
     try:
         return _to_query_response(
@@ -537,18 +554,7 @@ async def query_documents_stream(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     if len(request.question) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
-
-    if request.filter_source:
-        all_docs = get_ingestion_pipeline().get_all_documents()
-        known_sources = {d.filename for d in all_docs}
-        if request.filter_source not in known_sources:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No document with source '{request.filter_source}' found. "
-                    "Please check the filename."
-                ),
-            )
+    _require_documents(filter_source=request.filter_source)
 
     rag_pipeline = get_rag_pipeline()
 
@@ -600,6 +606,7 @@ async def agent_query(request: AgentQueryRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     if len(request.question) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents()
     try:
         # Fix 4: agent.run() is synchronous — run it in a thread pool so it
         # does not block the event loop while waiting on Groq responses.
@@ -642,6 +649,7 @@ async def agent_query(request: AgentQueryRequest):
 @router.post("/summarize", response_model=QueryResponse)
 async def summarize_document(request: SummarizeRequest):
     """Summarize one or all uploaded papers."""
+    _require_documents(filter_source=request.source_file)
     try:
         return _to_query_response(
             get_rag_pipeline().summarize(
@@ -664,6 +672,7 @@ async def compare_papers(request: CompareRequest):
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
     if len(request.paper2) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents()
     try:
         return _to_query_response(
             get_rag_pipeline().compare(
@@ -680,6 +689,7 @@ async def literature_survey(request: LiteratureSurveyRequest):
     """Generate a literature survey from the uploaded papers."""
     if request.topic and len(request.topic) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents()
     try:
         return _to_query_response(
             get_rag_pipeline().literature_survey(
@@ -696,6 +706,7 @@ async def literature_survey(request: LiteratureSurveyRequest):
 @router.post("/research-gaps", response_model=QueryResponse)
 async def research_gaps(request: ResearchGapsRequest):
     """Identify research gaps and future directions."""
+    _require_documents(filter_source=request.source_file)
     try:
         return _to_query_response(
             get_rag_pipeline().identify_gaps(
@@ -714,6 +725,7 @@ async def explain_concept(request: ExplainRequest):
         raise HTTPException(status_code=400, detail="Concept cannot be empty")
     if len(request.concept) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents(filter_source=request.source_file)
     try:
         return _to_query_response(
             get_rag_pipeline().explain(
@@ -946,6 +958,7 @@ async def recommend_papers(request: RecommendRequest):
         raise HTTPException(status_code=400, detail="Interest cannot be empty")
     if len(request.interest) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents()
     try:
         return _to_query_response(
             get_rag_pipeline().recommend(
@@ -962,6 +975,7 @@ async def recommend_papers(request: RecommendRequest):
 @router.post("/trends", response_model=QueryResponse)
 async def research_trends(request: TrendsRequest = TrendsRequest()):
     """Analyse research trends across all uploaded papers."""
+    _require_documents()
     try:
         return _to_query_response(
             get_rag_pipeline().analyze_trends(**_llm_kwargs(request))
@@ -978,6 +992,7 @@ async def multi_doc_query(request: MultiDocRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     if len(request.question) > 2000:
         raise HTTPException(status_code=422, detail="Question must be 2000 characters or fewer.")
+    _require_documents()
     try:
         return _to_query_response(
             get_rag_pipeline().multi_doc_query(

@@ -11,14 +11,14 @@ const config: Config = {
     extend: {
       colors: {
         bg: {
-          DEFAULT: "#0a0a14",
-          subtle: "#12122a",
-          card: "#1a1a2e",
-          elevated: "#23233f",
+          DEFAULT: "rgb(var(--bg) / <alpha-value>)",
+          subtle: "rgb(var(--bg-subtle) / <alpha-value>)",
+          card: "rgb(var(--bg-card) / <alpha-value>)",
+          elevated: "rgb(var(--bg-elevated) / <alpha-value>)",
         },
         border: {
-          DEFAULT: "#2a2a4a",
-          strong: "#3a3a5a",
+          DEFAULT: "rgb(var(--color-border) / <alpha-value>)",
+          strong: "rgb(var(--color-border-strong) / <alpha-value>)",
         },
         brand: {
           50: "#f5f3ff",
